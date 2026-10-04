@@ -56,6 +56,6 @@ cat <<'NEXT'
 
 Next, in your project:
   crux init            # config, docs/adr, architecture map
-  crux skill install   # the Claude Code skill (/crux enrich, /crux digest, /crux finalize)
+  crux skill install   # agent skills; --agent codex|cursor|gemini|copilot|opencode|all
   crux serve --open
 NEXT

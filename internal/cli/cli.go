@@ -91,7 +91,7 @@ type args struct {
 	flags map[string]string
 }
 
-var valueFlags = map[string]bool{"root": true, "port": true, "host": true, "out": true, "tags": true, "components": true, "status": true, "author": true, "tag": true, "context": true, "due": true, "option": true, "decision": true, "reopen": true, "token": true, "data": true}
+var valueFlags = map[string]bool{"root": true, "port": true, "host": true, "out": true, "tags": true, "components": true, "status": true, "author": true, "tag": true, "context": true, "due": true, "option": true, "decision": true, "reopen": true, "token": true, "data": true, "agent": true}
 var short = map[string]string{"o": "out", "c": "context", "h": "help"}
 
 func parse(argv []string) args {
@@ -999,35 +999,64 @@ func cmdMe(a args) error {
 	return nil
 }
 
+// skillDirs is where each coding agent looks for project skills (SKILL.md folders).
+var skillDirs = map[string]string{
+	"claude":   ".claude/skills",
+	"codex":    ".agents/skills",
+	"cursor":   ".cursor/skills",
+	"gemini":   ".gemini/skills",
+	"copilot":  ".github/skills",
+	"opencode": ".opencode/skills",
+}
+
+var agentOrder = []string{"claude", "codex", "cursor", "gemini", "copilot", "opencode"}
+
 func cmdSkill(a args) error {
 	if first(a.pos) != "install" {
-		return errors.New("crux skill install")
+		return errors.New("crux skill install [--agent claude|codex|cursor|gemini|copilot|opencode|all]")
+	}
+	agents := strings.Split(firstNonEmpty(a.flags["agent"], "claude"), ",")
+	if len(agents) == 1 && agents[0] == "all" {
+		agents = agentOrder
+	}
+	for _, ag := range agents {
+		if skillDirs[strings.TrimSpace(ag)] == "" {
+			return fmt.Errorf("unknown agent %q (one of: %s, all)", ag, strings.Join(agentOrder, ", "))
+		}
 	}
 	cfg, err := project(a, true)
 	if err != nil {
 		return err
 	}
-	for _, name := range []string{"crux", "answer-me-with-html"} {
-		dest := filepath.Join(cfg.Root, ".claude", "skills", name)
-		if _, err := os.Stat(dest); err == nil && !a.has("force") {
-			out(dim("skip " + name + " (exists, --force to overwrite)"))
+	seen := map[string]bool{}
+	for _, ag := range agents {
+		base := filepath.Join(cfg.Root, filepath.FromSlash(skillDirs[strings.TrimSpace(ag)]))
+		if seen[base] {
 			continue
 		}
-		err := fs.WalkDir(skills.FS, name, func(p string, e fs.DirEntry, err error) error {
-			if err != nil || e.IsDir() {
+		seen[base] = true
+		for _, name := range []string{"crux", "answer-me-with-html"} {
+			dest := filepath.Join(base, name)
+			if _, err := os.Stat(dest); err == nil && !a.has("force") {
+				out(dim("skip " + cfg.Rel(dest) + " (exists, --force to overwrite)"))
+				continue
+			}
+			err := fs.WalkDir(skills.FS, name, func(p string, e fs.DirEntry, err error) error {
+				if err != nil || e.IsDir() {
+					return err
+				}
+				b, _ := fs.ReadFile(skills.FS, p)
+				t := filepath.Join(base, filepath.FromSlash(p))
+				if err := os.MkdirAll(filepath.Dir(t), 0o755); err != nil {
+					return err
+				}
+				return os.WriteFile(t, b, 0o644)
+			})
+			if err != nil {
 				return err
 			}
-			b, _ := fs.ReadFile(skills.FS, p)
-			t := filepath.Join(cfg.Root, ".claude", "skills", filepath.FromSlash(p))
-			if err := os.MkdirAll(filepath.Dir(t), 0o755); err != nil {
-				return err
-			}
-			return os.WriteFile(t, b, 0o644)
-		})
-		if err != nil {
-			return err
+			out("%s %s", green("✓"), cfg.Rel(dest))
 		}
-		out("%s %s", green("✓"), cfg.Rel(dest))
 	}
 	return nil
 }

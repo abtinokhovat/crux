@@ -22,16 +22,25 @@ Then in your project:
 
 ```bash
 crux init            # crux.config.yaml, docs/adr/, architecture map, template
-crux skill install   # the Claude Code skill → .claude/skills/crux
+crux skill install   # the agent skills → .claude/skills/ (see below for other harnesses)
 crux serve --open    # the app, live-reloading as files change
 ```
 
-Or add the skill as a Claude Code plugin:
+### Skills for your coding agent
 
-```
-/plugin marketplace add abtinokhovat/crux
-/plugin install crux@crux
-```
+The `crux` and `answer-me-with-html` skills follow the SKILL.md format, so any harness that reads
+project skills can use them. Pick yours:
+
+| Harness | Install | Lands in |
+|---|---|---|
+| Claude Code | `crux skill install` — or as a plugin: `/plugin marketplace add abtinokhovat/crux` then `/plugin install crux@crux` | `.claude/skills/` |
+| Codex | `crux skill install --agent codex` | `.agents/skills/` |
+| Cursor | `crux skill install --agent cursor` | `.cursor/skills/` |
+| Gemini CLI | `crux skill install --agent gemini` | `.gemini/skills/` |
+| GitHub Copilot | `crux skill install --agent copilot` | `.github/skills/` |
+| OpenCode | `crux skill install --agent opencode` | `.opencode/skills/` |
+
+Several at once: `--agent claude,codex`, or `--agent all`. Existing skills are kept unless you pass `--force`.
 
 ## The flow
 

@@ -22,7 +22,8 @@ Project
   new <title>           A full ADR from the template            [--open] [--tags a,b] [--components x] [--status S]
   lint                  Check references, statuses, components, missing decisions
   index                 Rewrite the index table in <dir>/README.md
-  skill install         Copy the Claude skills into .claude/skills/ of this project
+  skill install         Copy the agent skills into this project  [--agent claude|codex|cursor|gemini|copilot|opencode|all]
+                        (default claude → .claude/skills; comma-separate several) [--force]
 
 Share server
   server                Run it (Docker-friendly)                 [--port 8080] [--data ./data]
