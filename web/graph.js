@@ -16,7 +16,7 @@ export function renderGraph(root, q) {
   root.innerHTML = `<div class="ak-page-head"><div><h1>Decision graph</h1><p>Every record and how it connects. Drag nodes, scroll to zoom, drag the background to pan.</p></div></div>
 <div class="ak-filters" id="g-filters"></div>
 <div class="ak-map-layout">
-  <section class="ak-box ak-canvas-wrap"><svg class="ak-canvas ak-canvas-tall" id="g-svg" role="img" aria-label="Decision graph"></svg>
+  <section class="ak-box ak-canvas-wrap"><div class="g-hist" id="g-hist"></div><svg class="ak-canvas ak-canvas-tall" id="g-svg" role="img" aria-label="Decision graph"></svg>
     <div class="ak-gtools"><button class="ak-btn" id="g-fit" type="button">Fit</button><button class="ak-btn" id="g-shake" type="button">Re-layout</button></div>
     <div class="ak-glegend">${EDGE_TYPES.map((t) => `<span><svg viewBox="0 0 26 8"><line x1="0" y1="4" x2="26" y2="4" class="g-edge t-${t}" style="opacity:1"/></svg>${esc(S.site.relations[t]?.label ?? t)}</span>`).join("")}<span><svg viewBox="0 0 26 8"><circle cx="13" cy="4" r="3.5" class="ak-st-doc" style="fill:var(--paper);stroke:var(--ak-purple);stroke-width:1.5"/></svg>doc</span></div>
   </section>
@@ -24,6 +24,42 @@ export function renderGraph(root, q) {
 </div>`;
 
   const svg = $("#g-svg");
+  // ── history: decisions appear in date order (then by number); the newest pulses. ──
+  const hist = { order: [], i: null, timer: 0 };
+  const histBar = $("#g-hist");
+  const histOrder = () => [...S.site.adrs].sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.id.localeCompare(b.id));
+  function paintHistory() {
+    hist.order = histOrder();
+    const shown = new Set(hist.i == null ? hist.order.map((a) => a.id) : hist.order.slice(0, hist.i + 1).map((a) => a.id));
+    const newest = hist.i == null ? null : hist.order[hist.i]?.id;
+    svg.classList.toggle("is-history", hist.i != null);
+    for (const n of nodes) if (n.el) { n.el.classList.toggle("is-later", n.a.kind === "adr" && !shown.has(n.id)); n.el.classList.toggle("is-newest", n.id === newest); }
+    for (const e of edges) e.el?.classList.toggle("is-later", !(shown.has(e.from) || e.s?.a.kind !== "adr") || !(shown.has(e.to) || e.t?.a.kind !== "adr"));
+    const a = hist.i == null ? null : hist.order[hist.i];
+    histBar.innerHTML = `<button type="button" class="ak-sq-btn" data-h="play" aria-label="${hist.timer ? "Pause" : "Play history"}"><svg viewBox="0 0 16 16" aria-hidden="true">${hist.timer ? '<path d="M4.5 3h2.5v10H4.5zM9 3h2.5v10H9z"/>' : '<path d="M5 3l8 5-8 5z"/>'}</svg></button><span class="g-hist-l">History</span><input type="range" min="0" max="${hist.order.length - 1}" value="${hist.i ?? hist.order.length - 1}" data-h="seek" aria-label="Decisions so far"><span class="g-hist-n">${hist.i == null ? `all ${hist.order.length}` : `${hist.i + 1} / ${hist.order.length}`}</span>${a ? `<span class="ak-sq-what">${esc(a.date ?? "")} · ${esc(a.id)} ${esc(a.title)}</span>` : ""}${hist.i != null ? '<button type="button" class="g-hist-x" data-h="all" aria-label="Show all">×</button>' : ""}`;
+  }
+  const histStop = () => { clearInterval(hist.timer); hist.timer = 0; };
+  histBar.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-h]");
+    if (!b) return;
+    if (b.dataset.h === "all") { histStop(); hist.i = null; return paintHistory(); }
+    if (b.dataset.h !== "play") return;
+    if (hist.timer) { histStop(); return paintHistory(); }
+    if (hist.i == null || hist.i >= hist.order.length - 1) hist.i = 0;
+    hist.timer = setInterval(() => {
+      if (hist.i >= hist.order.length - 1) { histStop(); return paintHistory(); }
+      hist.i++;
+      paintHistory();
+    }, 650);
+    paintHistory();
+  });
+  histBar.addEventListener("input", (ev) => {
+    if (ev.target.dataset.h !== "seek") return;
+    histStop();
+    hist.i = Number(ev.target.value);
+    paintHistory();
+  });
+
   const W = 1200, H = 760;
   let view = { x: 0, y: 0, w: W, h: H };
   const setView = () => svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
@@ -82,6 +118,7 @@ ${tags.length ? `<span class="ak-label">Tag</span><div class="ak-chips">${(state
       n.el = g;
     }
     paintHighlight();
+    paintHistory();
     tick(true);
   }
 

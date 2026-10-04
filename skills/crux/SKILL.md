@@ -61,6 +61,11 @@ The CLI is `crux`. If it is missing, ask the user to install it:
      `infra`/`store`/`topic` with `tech: redis|redpanda|kafka|postgres|s3|search|lb|proxy` get the tech color.
    - Sequence diagrams: ```` ```sequence num play ```` adds step playback; `participant Name = component-id`
      links a participant to architecture.yaml (names that match a component id or label link by themselves).
+     `alt <scenario>` … `else <scenario>` … `end` adds what-if branches with scenario buttons; "on map ›" replays it on the map.
+   - Trees: `? Case => Node > Child` lines add "walk a case" buttons that light the path to the outcome.
+   - ```` ```playline days ```` (`at | label | note`, ranges `30-50 | …`): an axis with an animated playhead.
+   - ```` ```sim title ```` (`inflow: 500 /s for 1 h, then 20 /s`, `outflow:`, `merge:`, `deadline: 24 h | label`):
+     backlog chart with sliders. Never invent numbers for it; use the ADR's own.
 3. **Maintain the connections — the user should never have to look them up.**
    - `crux link N relates M`, `crux link N depends_on M`, `crux link N supersedes M` (writes both sides).
    - Frontmatter: `tags:` (reuse existing — `crux tags`), `components:` (ids from architecture.yaml),

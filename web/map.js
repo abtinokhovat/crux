@@ -221,8 +221,36 @@ edges:
     else if (ev.key === "+" || ev.key === "=") zoomIn();
   };
   addEventListener("keydown", onKey);
+  // Decision impact: hovering a decision (band card, detail row, any reference) lights the boxes
+  // whose subtree it touches and the lines between them; ?impact=<id> keeps one lit.
+  const impact = (adrId) => {
+    stage.classList.toggle("is-impact", !!adrId);
+    const hit = new Set();
+    if (adrId) for (const it of items) {
+      const n = it.node ?? it.ghost;
+      // its own subtree has the decision, or a parent does (a decision about the broker covers its topics)
+      let up = false;
+      for (let p = n && S.site.architecture.nodes[n.parent]; p && !up; p = S.site.architecture.nodes[p.parent]) up = p.adrs?.includes(adrId);
+      if (it.adr ? it.adr.id === adrId : n && (n.deep?.includes(adrId) || up)) hit.add(it.id);
+    }
+    for (const el of stage.querySelectorAll(".m-node")) el.classList.toggle("is-hit", hit.has(el.dataset.id));
+    for (const el of stage.querySelectorAll(".m-edge")) el.classList.toggle("is-hit", hit.has(el.dataset.from) && hit.has(el.dataset.to));
+  };
+  const pinned = q.get("impact");
+  const adrOf = (el) => el?.closest?.("[data-ref]")?.dataset.ref ?? el?.closest?.(".m-node.k-adr")?.dataset.id ?? null;
+  root.addEventListener("mouseover", (ev) => { const id = adrOf(ev.target); if (id) impact(id); });
+  root.addEventListener("mouseout", (ev) => { if (adrOf(ev.target) && !adrOf(ev.relatedTarget)) impact(pinned); });
+  if (pinned) {
+    const a = S.byId.get(pinned);
+    const bar = document.createElement("div");
+    bar.className = "m-impact";
+    bar.innerHTML = `<span>Impact of</span><a href="${href(a ?? { id: pinned, kind: "adr" })}" data-ref="${esc(pinned)}">${esc(a ? `${label(a)} · ${a.title}` : pinned)}</a><a class="x" href="#/map/${encodeURIComponent(node?.id ?? "")}" aria-label="Clear">×</a>`;
+    root.querySelector(".m-canvas")?.before(bar);
+    impact(pinned);
+  }
   select(q.get("sel"));
-  return () => removeEventListener("keydown", onKey);
+  const stopReplay = q.get("replay") && S.replay ? replayOnMap(root, stage, items, S.replay) : null;
+  return () => { removeEventListener("keydown", onKey); stopReplay?.(); };
 }
 
 const drillable = (n) => n && (n.children.length || n.deep.length);
@@ -763,4 +791,94 @@ function adrDetail(a) {
 ${g.text ? `<div class="ak-hero ak-hero--${g.kind === "decision" ? "decision" : g.kind === "question" ? "question" : "rec"} ak-st-${a.statusKey}" style="padding:10px 12px"><div class="ak-hero-label">${esc(g.kind)}</div><div class="ak-hero-text" style="font-size:14px">${esc(g.text)}</div></div>` : ""}
 ${a.tags.length ? `<div class="ak-chips" style="margin-top:10px">${a.tags.map((t) => tagChip(t)).join("")}</div>` : ""}
 <p style="margin:14px 0 0"><a class="ak-btn" href="${href(a)}">Open ${esc(label(a))} →</a></p>`;
+}
+
+// ── replay a sequence on the map ─────────────────────────
+// Each message lights its two boxes (the visible box that is, or contains, the participant's
+// component) and sends a rectangle along the real map line; with no line, a temporary dashed one.
+// Two passes, then it rests; the bar has play/pause and a way back to the decision.
+function replayOnMap(root, stage, items, rp) {
+  const NS = "http://www.w3.org/2000/svg";
+  const nodes = S.site.architecture.nodes;
+  const idOf = (x) => (x.node ?? x.ghost)?.id;
+  const under = (x, id) => { for (let n = nodes[idOf(x)]; n; n = nodes[n.parent]) if (n.id === id) return true; return false; };
+  const linked = (x, y) => !!y && [...stage.querySelectorAll(".m-edge")].some((e) => (e.dataset.from === x.id && e.dataset.to === y.id) || (e.dataset.from === y.id && e.dataset.to === x.id));
+  // The visible box for a component: itself, else its nearest visible parent, else a visible child
+  // (a topic for its broker), preferring one with a line to the other participant.
+  const boxFor = (id, other) => {
+    for (let n = nodes[id]; n; n = nodes[n.parent]) {
+      const it = items.find((x) => idOf(x) === n.id);
+      if (it) return it;
+    }
+    const kids = items.filter((x) => !x.adr && under(x, id));
+    return kids.find((x) => linked(x, other)) ?? kids[0] ?? null;
+  };
+  const steps = rp.steps.map((x) => {
+    const a0 = boxFor(x.fromNode), b0 = boxFor(x.toNode);
+    return { ...x, a: boxFor(x.fromNode, b0) ?? a0, b: boxFor(x.toNode, a0) ?? b0 };
+  }).filter((x) => x.a || x.b);
+  if (!steps.length) return null;
+  const STEP = 1500 / (rp.speed || 1.5);
+  const bar = document.createElement("div");
+  bar.className = "m-replay ak-seq is-paused";
+  root.querySelector(".m-canvas")?.before(bar);
+  const layer = svgEl("g", { class: "m-replay-layer" }, stage);
+  let k = 0, passes = 0, playing = true, timer = 0, raf = 0;
+  const chip = (it, name) => {
+    const n = it?.node ?? it?.ghost;
+    const tech = n?.tech ? ` tech tech-${n.tech.replace(/[^a-z0-9-]/g, "")}` : "";
+    return `<span class="ak-sq-chip${n ? ` k-${esc(n.kind)}${tech}` : ""}">${esc(name)}</span>`;
+  };
+  const show = () => {
+    clearTimeout(timer);
+    cancelAnimationFrame(raf);
+    layer.replaceChildren();
+    const x = steps[k];
+    stage.classList.add("is-impact");
+    for (const el of stage.querySelectorAll(".m-node")) el.classList.toggle("is-hit", el.dataset.id === x.a?.id || el.dataset.id === x.b?.id);
+    let path = null;
+    for (const el of stage.querySelectorAll(".m-edge")) {
+      const on = !!(x.a && x.b) && ((el.dataset.from === x.a.id && el.dataset.to === x.b.id) || (el.dataset.from === x.b.id && el.dataset.to === x.a.id));
+      el.classList.toggle("is-hit", on);
+      if (on && el.querySelector("path")) path = { el: el.querySelector("path"), reverse: el.dataset.from !== x.a.id };
+    }
+    bar.innerHTML = `<button type="button" class="ak-sq-btn" data-rp="play" aria-label="${playing ? "Pause" : "Play"}"><svg viewBox="0 0 16 16" aria-hidden="true"><path class="i-pause" d="M4.5 3h2.5v10H4.5zM9 3h2.5v10H9z"/><path class="i-play" d="M5 3l8 5-8 5z"/></svg></button><span class="ak-sq-count">${k + 1}/${steps.length}</span>${chip(x.a, x.from)}<span class="ak-sq-to">→</span>${chip(x.b, x.to)}${x.label ? `<span class="ak-sq-what">${esc(x.label)}</span>` : ""}<a class="m-replay-x" href="${rp.back}" title="Back to the decision">×</a>`;
+    bar.classList.toggle("is-paused", !playing);
+    if (x.a && x.b && x.a !== x.b) {
+      const color = getComputedStyle(stage.querySelector(`.m-node[data-id="${CSS.escape(x.a.id)}"] rect.box`) ?? stage).stroke || "currentColor";
+      let line = path?.el;
+      if (!line) {
+        line = svgEl("path", { class: "m-replay-tmp", d: `M${x.a.x + x.a.w / 2},${x.a.y + x.a.h / 2} L${x.b.x + x.b.w / 2},${x.b.y + x.b.h / 2}` }, layer);
+      }
+      const len = line.getTotalLength();
+      const sq = svgEl("rect", { class: "ak-sq-dot", width: 18, height: 8, stroke: color }, layer);
+      const t0 = performance.now();
+      const tick = (now) => {
+        const t = Math.min(1, (now - t0) / (STEP * 0.6));
+        const e = 1 - Math.pow(1 - t, 2);
+        const pt = line.getPointAtLength(len * (path?.reverse ? 1 - e : e));
+        sq.setAttribute("x", pt.x - 9);
+        sq.setAttribute("y", pt.y - 4);
+        if (t < 1 && !matchMedia("(prefers-reduced-motion: reduce)").matches) raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+    }
+    if (playing) timer = setTimeout(next, STEP);
+  };
+  const next = () => {
+    if (k === steps.length - 1) {
+      passes++;
+      if (passes >= 2) { playing = false; return show(); }
+      k = 0;
+    } else k++;
+    show();
+  };
+  bar.addEventListener("click", (ev) => {
+    if (!ev.target.closest('[data-rp="play"]')) return;
+    playing = !playing;
+    if (playing && passes >= 2) { passes = 0; k = 0; }
+    show();
+  });
+  show();
+  return () => { clearTimeout(timer); cancelAnimationFrame(raf); };
 }
