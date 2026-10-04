@@ -77,7 +77,7 @@ func (a *App) projectComponents() []ComponentFile {
 func (a *App) Site(static bool) map[string]any {
 	s := a.Store()
 	return map[string]any{
-		"title": a.cfg.Title, "prefix": a.cfg.Prefix, "digits": a.cfg.Digits, "statuses": a.cfg.Statuses, "tagInfo": a.cfg.Tags,
+		"title": a.cfg.Title, "prefix": a.cfg.Prefix, "digits": a.cfg.Digits, "statuses": a.cfg.Statuses, "tagInfo": a.cfg.Tags, "glossary": a.cfg.Glossary,
 		"relations": adr.Relations, "adrs": s.Adrs, "docs": s.Docs, "edges": s.Edges, "tags": s.Tags, "architecture": s.Architecture,
 		"problems": s.Problems, "projectComponents": a.projectComponents(), "static": static, "local": !static, "me": a.cfg.Me,
 		"share": map[string]any{"url": a.cfg.Share, "loggedIn": a.cfg.ShareToken != "", "items": share.LoadState(a.cfg)},

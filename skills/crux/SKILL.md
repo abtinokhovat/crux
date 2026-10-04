@@ -51,6 +51,16 @@ The CLI is `crux`. If it is missing, ask the user to install it:
    - `## Questions for the team` — only what a person must answer, one per line:
      `- @handle: question`. Pick the handle from the notes, CODEOWNERS or git log.
    - Optional: ```` ```compare ```` (weighted criteria), ```` ```tradeoff ````, ```` ```stats ````, ```` ```flow ````.
+   - Visual blocks: ```` ```tree [lr] ```` (node tones `+` green, `!` amber, `-` red, `*` accent; `lr` = left to right),
+     ```` ```rules ```` (`+ condition => action | note`), ```` ```arch [flow] ```` (`# Column`, cards, indented details),
+     ```` ```kv cols=N ```` for numbers. Panel flags: `{fold}` collapses a long panel, `{tab=Group}` merges
+     consecutive panels into tabs. In prose, `(U)`, `(assumption)` and `[V](url)` render as badges; terms from
+     `glossary:` in crux.config.yaml get a hover definition. Never drop facts when restyling.
+   - Architecture map kinds (architecture.yaml): `context` (bounded context) ⊃ `service` (deployable binary)
+     ⊃ `module` (code used inside one or more services; draw "uses" edges); `system` for the whole platform;
+     `infra`/`store`/`topic` with `tech: redis|redpanda|kafka|postgres|s3|search|lb|proxy` get the tech color.
+   - Sequence diagrams: ```` ```sequence num play ```` adds step playback; `participant Name = component-id`
+     links a participant to architecture.yaml (names that match a component id or label link by themselves).
 3. **Maintain the connections — the user should never have to look them up.**
    - `crux link N relates M`, `crux link N depends_on M`, `crux link N supersedes M` (writes both sides).
    - Frontmatter: `tags:` (reuse existing — `crux tags`), `components:` (ids from architecture.yaml),

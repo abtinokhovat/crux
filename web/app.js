@@ -42,7 +42,7 @@ async function loadDoc(id) {
   if (!S.docCache.has(id)) S.docCache.set(id, fetch(`api/doc/${encodeURIComponent(id)}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)));
   const doc = await S.docCache.get(id);
   if (!doc) return null;
-  const { html, errors } = renderAdr({ ...doc.meta, source: doc.source }, { byId: S.byId }, { prefix: S.site.prefix, digits: S.site.digits ?? 4, statuses: S.site.statuses });
+  const { html, errors } = renderAdr({ ...doc.meta, source: doc.source }, { byId: S.byId }, { prefix: S.site.prefix, digits: S.site.digits ?? 4, statuses: S.site.statuses, glossary: S.site.glossary, arch: S.site.architecture });
   return { ...doc, html, errors };
 }
 
@@ -179,6 +179,7 @@ function list(parts, q) {
   const tag = q.get("tag") ?? "";
   const text = q.get("q") ?? "";
   const kind = q.get("kind") ?? "adr";
+  const folder = q.get("in") ?? "";
   const order = statusOrder();
   let items = kind === "all" ? [...S.site.adrs, ...S.site.docs] : kind === "doc" ? S.site.docs : S.site.adrs;
   if (status) items = items.filter((a) => a.statusKey === status);
@@ -187,8 +188,12 @@ function list(parts, q) {
     const hits = new Set(search(text, 200).map((r) => r.item.id));
     items = items.filter((a) => hits.has(a.id));
   }
+  // Folders: the architecture tree. Counts follow the other filters; the folder filter applies last.
+  const matching = new Set(items.map((a) => a.id));
+  const inFolder = folderIds(folder);
+  if (inFolder) items = items.filter((a) => inFolder.has(a.id));
   const link = (patch) => {
-    const p = new URLSearchParams({ status, tag, q: text, kind, ...patch });
+    const p = new URLSearchParams({ status, tag, q: text, kind, in: folder, ...patch });
     for (const [k, v] of [...p]) if (!v || (k === "kind" && v === "adr")) p.delete(k);
     return `#/list${p.toString() ? `?${p}` : ""}`;
   };
@@ -215,10 +220,65 @@ function list(parts, q) {
     });
   });
 
+  const tree = folderTree(folder, matching, link);
+  const cards = items.length ? `<div class="ak-deck">${items.map(decisionCard).join("")}</div>` : `<div class="ak-empty">No decisions match.</div>`;
   return `<div class="ak-page-head"><div><h1>Decisions</h1><p>${items.length} shown</p></div><input class="ak-input" id="list-q" placeholder="Filter by text…" value="${esc(text)}"></div>
 <div class="ak-filters"><span class="ak-label">Status</span><div class="ak-chips">${statusChips}</div>${kinds}</div>
-${tagChips ? `<div class="ak-filters"><span class="ak-label">Tags</span><div class="ak-chips">${tagChips}</div></div>` : ""}
-${items.length ? `<div class="ak-deck">${items.map(decisionCard).join("")}</div>` : `<div class="ak-empty">No decisions match.</div>`}`;
+${tree ? `<div class="ak-folders"><aside class="ak-fside"><div class="ak-ftree" aria-label="Folders">${tree}</div>${tagChips ? `<div class="ak-ftags"><div class="ak-label">Tags</div><div class="ak-ftags-list">${tagChips}</div></div>` : ""}</aside><div class="ak-fmain">${folderHead(folder, link)}${cards}</div></div>`
+  : `${tagChips ? `<div class="ak-filters"><span class="ak-label">Tags</span><div class="ak-chips">${tagChips}</div></div>` : ""}${cards}`}`;
+}
+
+// ── folders: the architecture tree as a folder view of decisions ──────
+const UNFILED = "_unfiled";
+const archNodes = () => S.site.architecture?.nodes ?? {};
+
+// Decision ids in a folder: its own plus its whole subtree. null = no folder chosen.
+function folderIds(id) {
+  if (!id) return null;
+  if (id === UNFILED) return new Set(S.site.adrs.filter((a) => !a.components?.length).map((a) => a.id));
+  const n = archNodes()[id];
+  if (!n) return new Set();
+  return new Set(n.deep);
+}
+
+function folderPath(id) {
+  const out = [];
+  for (let n = archNodes()[id]; n; n = archNodes()[n.parent]) out.unshift(n);
+  return out;
+}
+
+function folderTree(current, matching, link) {
+  const arch = S.site.architecture;
+  if (!arch?.roots?.length) return "";
+  const open = new Set(current ? folderPath(current).map((n) => n.id) : []);
+  const count = (ids) => ids.filter((x) => matching.has(x)).length;
+  const marker = (n) => `<i class="ak-fk ak-fk--${esc(n.kind)}${n.tech ? ` tech tech-${esc(n.tech.replace(/[^a-z0-9-]/g, ""))}` : ""}"></i>`;
+  const row = (n, depth) => {
+    const kids = n.children.map((c) => arch.nodes[c]).filter((c) => c && c.deep.length);
+    const c = count(n.deep);
+    const a = `<a class="ak-frow${n.id === current ? " on" : ""}${c ? "" : " zero"}" href="${link({ in: n.id === current ? "" : n.id })}" title="${esc(n.sub || n.label)}">${marker(n)}<span class="ak-fname">${esc(n.label)}</span><b>${c}</b></a>`;
+    if (!kids.length) return `<li>${a}</li>`;
+    const isOpen = open.has(n.id) || depth < 2;
+    return `<li><details${isOpen ? " open" : ""}><summary>${a}</summary><ul>${kids.map((k) => row(k, depth + 1)).join("")}</ul></details></li>`;
+  };
+  const roots = arch.roots.map((r) => arch.nodes[r]).filter((n) => n && n.deep.length);
+  const unfiled = S.site.adrs.filter((a) => !a.components?.length).map((a) => a.id);
+  const all = `<li><a class="ak-frow${!current ? " on" : ""}" href="${link({ in: "" })}"><i class="ak-fk ak-fk--all"></i><span class="ak-fname">${esc(arch.title || "All")}</span><b>${matching.size}</b></a></li>`;
+  const un = unfiled.length ? `<li class="ak-funfiled"><a class="ak-frow${current === UNFILED ? " on" : ""}" href="${link({ in: current === UNFILED ? "" : UNFILED })}" title="Decisions linked to no component"><i class="ak-fk ak-fk--unfiled"></i><span class="ak-fname">Unfiled</span><b>${count(unfiled)}</b></a></li>` : "";
+  return `<div class="ak-label">Folders</div><ul class="ak-ftree-list">${all}${roots.map((n) => row(n, 0)).join("")}${un}</ul>`;
+}
+
+function folderHead(id, link) {
+  if (!id) return "";
+  if (id === UNFILED) return `<div class="ak-fhead"><nav class="ak-fcrumbs"><a href="${link({ in: "" })}">All</a><i>/</i><b>Unfiled</b></nav><span class="muted">Add <code>components:</code> to file these.</span></div>`;
+  const path = folderPath(id);
+  const n = path.at(-1);
+  if (!n) return "";
+  const crumbs = [`<a href="${link({ in: "" })}">All</a>`]
+    .concat(path.map((p, i) => (i === path.length - 1 ? `<b>${esc(p.label)}</b>` : `<a href="${link({ in: p.id })}">${esc(p.label)}</a>`)))
+    .join("<i>/</i>");
+  const mapHref = n.children.length ? `#/map/${encodeURIComponent(n.id)}` : `#/map/${encodeURIComponent(n.parent ?? "")}?sel=${encodeURIComponent(n.id)}`;
+  return `<div class="ak-fhead"><nav class="ak-fcrumbs">${crumbs}</nav><div class="ak-fhead-tools"><a class="ak-chip" href="${mapHref}">Open on map ›</a></div></div>`;
 }
 
 // ── ADR / doc page ───────────────────────────────────────
@@ -431,6 +491,48 @@ function mountCanvas(kind, q, nodeId) {
 // ── global behavior ──────────────────────────────────────
 function setupPopovers() {
   let pop;
+  // Anchor to the visible box (a sequence participant's group also spans its whole lifeline),
+  // below it if it fits, else above, and always inside the viewport.
+  const place = (t) => {
+    document.body.append(pop);
+    const r = (t.querySelector?.("rect.am-actor") ?? t).getBoundingClientRect();
+    const h = pop.offsetHeight;
+    const top = r.bottom + 8 + h <= innerHeight ? r.bottom + 8 : r.top - h - 8 >= 8 ? r.top - h - 8 : innerHeight - h - 8;
+    pop.style.top = `${Math.max(8, top)}px`;
+    pop.style.left = `${Math.min(innerWidth - pop.offsetWidth - 12, Math.max(8, r.left))}px`;
+  };
+  // Architecture components (sequence participants, anything with data-node): a preview of the
+  // component's map page — kind and tech, description, decisions inside, children.
+  document.addEventListener("mouseover", (e) => {
+    const t = e.target.closest(".ak-part[data-node], [data-node-pop]");
+    if (!t || t.closest(".ak-pop")) return;
+    const n = S.site.architecture?.nodes?.[t.dataset.node ?? t.dataset.nodePop];
+    if (!n || pop?.dataset.for === n.id) return;
+    pop?.remove();
+    const nodes = S.site.architecture.nodes;
+    const tech = n.tech ? ` tech tech-${n.tech.replace(/[^a-z0-9-]/g, "")}` : "";
+    const where = [];
+    for (let p = nodes[n.parent]; p; p = nodes[p.parent]) where.unshift(p.label);
+    const desc = String(n.desc ?? "").split("\n").filter((l) => l.trim() && !/^\s*-/.test(l)).join(" ").trim();
+    const adrs = n.deep.map((id) => S.byId.get(id)).filter(Boolean);
+    const kids = n.children.map((c) => nodes[c]?.label).filter(Boolean);
+    pop = document.createElement("div");
+    pop.className = `ak-pop ak-npop${tech}`;
+    pop.dataset.for = n.id;
+    pop.innerHTML = `<div class="ak-npop-tag">${esc([n.kind, n.tech].filter(Boolean).join(" · ").toUpperCase())}${where.length ? `<span>in ${esc(where.join(" / "))}</span>` : ""}</div>
+<strong>${esc(n.label)}</strong>${n.sub ? `<div class="ak-npop-sub">${esc(n.sub)}</div>` : ""}${desc ? `<p>${esc(desc.length > 220 ? desc.slice(0, 219) + "…" : desc)}</p>` : ""}
+${adrs.length ? `<div class="ak-npop-h">Decisions · ${adrs.length}</div><ul class="ak-npop-adrs">${adrs.slice(0, 5).map((a) => `<li><span class="mono">${esc(a.id)}</span><span class="t">${esc(a.title)}</span>${pill(a)}</li>`).join("")}${adrs.length > 5 ? `<li class="more">+${adrs.length - 5} more</li>` : ""}</ul>` : ""}
+${kids.length ? `<div class="ak-npop-h">Inside · ${kids.length}</div><div class="ak-npop-kids">${esc(kids.slice(0, 6).join(" · "))}${kids.length > 6 ? ` +${kids.length - 6}` : ""}</div>` : ""}
+<div class="ak-npop-foot">Click to open on the map ›</div>`;
+    place(t);
+  });
+  document.addEventListener("mouseout", (e) => {
+    const from = e.target.closest?.(".ak-part[data-node], [data-node-pop]");
+    if (from && !e.relatedTarget?.closest?.(".ak-part[data-node], [data-node-pop]")) {
+      pop?.remove();
+      pop = null;
+    }
+  });
   document.addEventListener("mouseover", (e) => {
     const t = e.target.closest("[data-ref]");
     if (!t || t.closest(".ak-pop")) return;
@@ -457,6 +559,209 @@ function setupPopovers() {
     pop?.remove();
     pop = null;
   });
+}
+
+// ── sequence playback ────────────────────────────────────
+// Figures marked data-sq-player autoplay at 1.5× when visible, loop (hold 2 s on the full
+// diagram, then replay), and pause when scrolled away. Steps before the cursor are done, the
+// current one is lit with a dot running along its arrow, later ones are faded. Segments jump.
+function setupSequencePlayers() {
+  const SPEEDS = [1, 1.5, 2];
+  const STEP_MS = 1500, HOLD_MS = 2000;
+  const reduce = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const state = new WeakMap();
+  const get = (fig) => {
+    let s = state.get(fig);
+    if (!s) {
+      s = { fig, steps: [...fig.querySelectorAll(".ak-sq-step")], k: 0, timer: 0, raf: 0, speed: 1.5, playing: false, user: false, passes: 0, peek: null };
+      state.set(fig, s);
+    }
+    return s;
+  };
+  const render = (s) => {
+    const n = s.steps.length;
+    // Dim and highlight only while something is shown on purpose: playing, a hover preview, or a
+    // keyboard step. Paused or stopped = the plain, undimmed diagram.
+    const live = s.k > 0 && s.k <= n && (s.playing || !!s.peek || s.hold);
+    const cur = live ? s.steps[s.k - 1] : null;
+    s.fig.classList.toggle("is-stepping", live);
+    s.steps.forEach((g, i) => {
+      g.classList.toggle("is-done", live && i < s.k - 1);
+      g.classList.toggle("is-current", live && i === s.k - 1);
+      g.classList.toggle("is-future", live && i >= s.k);
+    });
+    for (const p of s.fig.querySelectorAll(".ak-part")) p.classList.toggle("is-active", !!cur && (p.dataset.p === cur.dataset.from || p.dataset.p === cur.dataset.to));
+    s.fig.querySelectorAll(".ak-sq-seg").forEach((seg, i) => {
+      seg.classList.toggle("done", i < s.k - 1 || s.k > n);
+      seg.classList.toggle("cur", live && i === s.k - 1);
+      seg.style.setProperty("--dur", `${STEP_MS / s.speed}ms`);
+      if (live && i === s.k - 1) { const bar = seg.firstElementChild; bar.style.animation = "none"; bar.offsetWidth; bar.style.animation = ""; }
+    });
+    s.fig.classList.toggle("is-paused", !s.playing);
+    s.fig.querySelector(".ak-sq-count").textContent = `${Math.min(s.k, n)}/${n}`;
+    const btn = s.fig.querySelector('[data-sq="play"]');
+    btn.setAttribute("aria-label", s.playing ? "Pause" : "Play");
+    s.fig.querySelector(".ak-sq-caption").innerHTML = caption(s, cur, n);
+    runDot(s, cur);
+  };
+  // Caption: sender and receiver as chips styled like their components, then what happens on a
+  // black label.
+  const chip = (s, name) => {
+    const part = [...s.fig.querySelectorAll(".ak-part")].find((p) => p.dataset.p === name);
+    const cls = part ? [...part.classList].filter((c) => /^(k-|tech)/.test(c) || c === "ak-part--linked").join(" ") : "";
+    return `<span class="ak-sq-chip ${cls}">${esc(name)}</span>`;
+  };
+  const caption = (s, cur, n) => {
+    if (!cur) return s.k > n ? `<span class="ak-sq-what">Full flow</span>` : "&nbsp;";
+    const what = cur.dataset.label ? `<span class="ak-sq-what">${esc(cur.dataset.label)}</span>` : "";
+    if (cur.dataset.kind === "msg") return `${chip(s, cur.dataset.from)}<span class="ak-sq-to">→</span>${chip(s, cur.dataset.to)}${what}`;
+    return `<span class="ak-sq-chip">${cur.dataset.kind === "note" ? "Note" : "Phase"}</span>${what}`;
+  };
+  // The current arrow is drawn in the sender's color (its box stroke color), complete with its
+  // head; a small square travels along it. No fill or arrow animation.
+  const NS = "http://www.w3.org/2000/svg";
+  const partColor = (s, name) => {
+    const part = [...s.fig.querySelectorAll(".ak-part")].find((p) => p.dataset.p === name);
+    const rect = part?.querySelector("rect.am-actor");
+    const c = rect ? getComputedStyle(rect).stroke : "";
+    return !c || c === "none" ? getComputedStyle(s.fig).getPropertyValue("--accent") || "rgb(29,95,191)" : c;
+  };
+  const runDot = (s, g) => {
+    cancelAnimationFrame(s.raf);
+    s.fig.querySelectorAll(".ak-sq-dot, .ak-sq-flow").forEach((el) => el.remove());
+    const path = g?.querySelector("path.am-edge");
+    if (!path) return;
+    const svg = s.fig.querySelector(":scope > svg");
+    const color = partColor(s, g.dataset.from);
+    const id = (s.gid ??= `sqg${Math.random().toString(36).slice(2, 8)}`);
+    if (!svg.querySelector(`#${id}-head`)) svg.querySelector("defs").insertAdjacentHTML("beforeend", `<marker id="${id}-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>`);
+    svg.querySelector(`#${id}-head path`).setAttribute("fill", color);
+    const flow = document.createElementNS(NS, "path");
+    flow.setAttribute("class", "ak-sq-flow");
+    flow.setAttribute("d", path.getAttribute("d"));
+    flow.setAttribute("stroke", color);
+    flow.setAttribute("marker-end", `url(#${id}-head)`);
+    path.after(flow);
+    if (reduce()) return;
+    const sq = document.createElementNS(NS, "rect");
+    sq.setAttribute("class", "ak-sq-dot");
+    sq.setAttribute("width", "18");
+    sq.setAttribute("height", "8");
+    sq.setAttribute("stroke", color);
+    svg.appendChild(sq);
+    const len = path.getTotalLength();
+    const dur = (STEP_MS * 0.6) / s.speed;
+    const t0 = performance.now();
+    const tick = (now) => {
+      const t = Math.min(1, (now - t0) / dur);
+      const pt = path.getPointAtLength(len * (1 - Math.pow(1 - t, 2)));
+      sq.setAttribute("x", pt.x - 9);
+      sq.setAttribute("y", pt.y - 4);
+      if (t < 1) s.raf = requestAnimationFrame(tick);
+      else sq.remove();
+    };
+    s.raf = requestAnimationFrame(tick);
+  };
+  // One tick per step; after the last step, hold the full diagram, then start over.
+  const schedule = (s) => {
+    clearTimeout(s.timer);
+    if (!s.playing) return;
+    const n = s.steps.length;
+    s.timer = setTimeout(() => {
+      if (s.k === n) s.passes++;
+      if (s.k > n && s.passes >= 2) { s.playing = false; render(s); return; } // two full passes, then rest on the full flow
+      s.k = s.k > n ? 1 : s.k + 1;
+      render(s);
+      schedule(s);
+    }, s.k > n ? HOLD_MS / s.speed : STEP_MS / s.speed);
+  };
+  const setPlaying = (s, on) => {
+    s.playing = on;
+    s.hold = false;
+    if (on && (s.k === 0 || s.k > s.steps.length)) { s.k = 1; s.passes = 0; }
+    render(s);
+    schedule(s);
+  };
+  // Step number under a pointer target: a progress segment or a step group in the diagram.
+  const stepAt = (s, el) => {
+    if (!el?.closest || !s.fig.contains(el)) return 0;
+    const seg = el.closest("[data-sq-seg]");
+    if (seg) return Number(seg.dataset.sqSeg);
+    const g = el.closest(".ak-sq-step");
+    return g ? Number(g.dataset.step) + 1 : 0;
+  };
+  const jump = (s, k) => {
+    s.user = true;
+    s.hold = true;
+    s.k = Math.max(1, Math.min(k, s.steps.length));
+    setPlaying(s, false);
+  };
+  document.addEventListener("click", (ev) => {
+    const fig = ev.target.closest("[data-sq-player]");
+    if (!fig) return;
+    const s = get(fig);
+    const at = stepAt(s, ev.target);
+    if (at) {
+      s.peek = null;
+      s.user = true;
+      s.k = at;
+      s.passes = 0;
+      return setPlaying(s, true);
+    }
+    const b = ev.target.closest("[data-sq]");
+    if (b?.dataset.sq === "play") { s.user = true; setPlaying(s, !s.playing); }
+    else if (b?.dataset.sq === "speed") {
+      s.speed = SPEEDS[(SPEEDS.indexOf(s.speed) + 1) % SPEEDS.length];
+      b.textContent = `${s.speed}×`;
+      render(s);
+      schedule(s);
+    }
+  });
+  // Hover a segment or a step in the diagram: replay just that step; leaving restores playback.
+  document.addEventListener("mouseover", (ev) => {
+    const fig = ev.target.closest?.("[data-sq-player]");
+    if (!fig) return;
+    const s = get(fig);
+    const at = stepAt(s, ev.target);
+    if (!at || (s.peek && s.k === at)) return;
+    if (!s.peek) s.peek = { k: s.k, playing: s.playing };
+    clearTimeout(s.timer);
+    s.playing = false;
+    s.k = at;
+    render(s);
+  });
+  document.addEventListener("mouseout", (ev) => {
+    const fig = ev.target.closest?.("[data-sq-player]");
+    if (!fig) return;
+    const s = get(fig);
+    if (!s.peek || stepAt(s, ev.relatedTarget)) return;
+    const { k, playing } = s.peek;
+    s.peek = null;
+    s.k = k;
+    s.playing = playing;
+    render(s);
+    schedule(s);
+  });
+  document.addEventListener("keydown", (ev) => {
+    const fig = ev.target.closest?.("[data-sq-player]");
+    if (!fig || /input|select/i.test(ev.target.tagName)) return;
+    const s = get(fig);
+    if (ev.key === "ArrowRight") { ev.preventDefault(); jump(s, s.k + 1); }
+    else if (ev.key === "ArrowLeft") { ev.preventDefault(); jump(s, s.k - 1); }
+    else if (ev.key === " ") { ev.preventDefault(); s.user = true; setPlaying(s, !s.playing); }
+  });
+  // Autoplay while visible (also when a tab containing it is opened). A user pause sticks.
+  const io = new IntersectionObserver((entries) => {
+    for (const en of entries) {
+      const s = get(en.target);
+      if (s.user || s.peek || reduce()) continue;
+      if (en.isIntersecting && !s.playing) setPlaying(s, true);
+      else if (!en.isIntersecting && s.playing) { s.playing = false; clearTimeout(s.timer); render(s); }
+    }
+  }, { threshold: 0.35 });
+  const watch = (root) => root.querySelectorAll?.("[data-sq-player]:not([data-sq-watched])").forEach((fig) => { fig.dataset.sqWatched = ""; io.observe(fig); });
+  new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => n.nodeType === 1 && (n.matches?.("[data-sq-player]") ? watch(n.parentNode) : watch(n))))).observe(document.body, { childList: true, subtree: true });
+  watch(document);
 }
 
 function setupCopy() {
@@ -519,5 +824,6 @@ addEventListener("hashchange", () => {
 const site = await loadSite();
 setupPopovers();
 setupCopy();
+setupSequencePlayers();
 setupLive(site);
 route();

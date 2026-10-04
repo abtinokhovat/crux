@@ -244,13 +244,41 @@ function linkRefs(html, store, cfg) {
       return tag;
     }
     if (depth.a > 0 || depth.svg > 0 || depth.code > 0) return text;
-    return text.replace(re, (all, n) => {
+    const linked = text.replace(re, (all, n) => {
       const id = String(n).padStart(cfg.digits, "0");
       const a = store?.byId.get(id);
       if (!a) return all;
       return `<a class="ak-ref ak-st-${a.statusKey}" href="#/adr/${id}" data-ref="${id}" title="${esc(a.title)} · ${esc(a.status)}">${all}</a>`;
     });
+    // Badges and glossary only touch text, never the attributes of the links just added.
+    return linked.replace(/(<[^>]+>)|([^<]+)/g, (m, tag, t) => tag ?? badges(glossary(t, cfg)));
   });
+}
+
+// "(U)" / "(assumption)" / bare "[V]" in prose → small badges.
+function badges(text) {
+  return text
+    .replace(/\(U\)/g, '<span class="ak-badge ak-badge--u" title="Unverified: confirm before relying on it">unverified</span>')
+    .replace(/\(assumption\)/gi, '<span class="ak-badge ak-badge--u" title="Assumption: not measured or sourced">assumption</span>')
+    .replace(/\[V\]/g, '<span class="ak-badge ak-badge--v" title="Verified in a primary source">✓ verified</span>');
+}
+// [V](url) → a linked "verified" badge.
+function sourceBadges(html) {
+  return html.replace(/<a ([^>]*)>V<\/a>/g, '<a $1 class="ak-badge ak-badge--v" title="Verified in a primary source — open it">✓ source</a>');
+}
+// cfg.glossary {term: definition}: first use of each term per document gets a hover definition.
+let seenTerms = new Set();
+function glossary(text, cfg) {
+  const g = cfg?.glossary;
+  if (!g) return text;
+  for (const [term, def] of Object.entries(g)) {
+    if (seenTerms.has(term)) continue;
+    const re = new RegExp(`(^|[^\\w-])(${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})(?![\\w-])`);
+    if (!re.test(text)) continue;
+    seenTerms.add(term);
+    text = text.replace(re, (m, pre, t) => `${pre}<abbr class="ak-term" title="${esc(def)}">${t}</abbr>`);
+  }
+  return text;
 }
 
 function rewriteHref(tag, cfg) {
@@ -283,7 +311,7 @@ export function renderAdr(adr, store, cfg, { forShare = false } = {}) {
   for (const p of parsed.panels) escapeBlocks(p.blocks);
   const intro = parsed.intro.length ? `<div class="am-intro am-md">${rb(parsed.intro)}</div>` : "";
   const errors = [];
-  const panels = parsed.panels.map((p) => {
+  const built = parsed.panels.map((p) => {
     let body;
     try {
       body = enhancePanel(p, adr) ?? rb(p.blocks);
@@ -291,6 +319,11 @@ export function renderAdr(adr, store, cfg, { forShare = false } = {}) {
       errors.push({ panel: p.title, message: err.message, line: (err.line ?? 0) + parsed.bodyLine });
       body = `<div class="ak-error"><b>Render error</b> in “${esc(p.title)}”: ${esc(err.message)}${err.example ? `<pre>${esc(err.example)}</pre>` : ""}</div>`;
     }
+    // {fold}: collapsed by default; the header stays visible.
+    if (p.attrs.fold) body = `<details class="ak-fold"><summary>Show ${esc(p.title.toLowerCase())}</summary>${body}</details>`;
+    return { p, body };
+  });
+  const sectionHtml = ({ p, body }) => {
     const claude = !forShare && p.attrs.from === "claude";
     const cls = (/^(decision|question|recommend)/i.test(p.title) ? " ak-panel--hero" : "") + (claude ? " ak-panel--claude" : "");
     const span = Math.max(1, Math.min(Number(p.attrs.span) || 3, 3));
@@ -298,8 +331,26 @@ export function renderAdr(adr, store, cfg, { forShare = false } = {}) {
 <header class="am-panel-head"><span class="am-panel-id">${esc(p.id)}</span><h2>${esc(p.title)}</h2>${(p.attrs.meta || autoMeta(p)) && !claude ? `<span class="am-panel-meta">${esc(p.attrs.meta || autoMeta(p))}</span>` : ""}${claude ? `<span class="ak-claude-bar">FROM YOUR CLAUDE <button type="button" data-keep="${esc(p.title)}">Keep</button><button type="button" class="drop" data-drop="${esc(p.title)}">Drop</button></span>` : ""}</header>
 <div class="am-panel-body">${body}</div>
 </section>`;
-  });
-  const html = linkRefs(intro + panels.join("\n"), store, cfg);
+  };
+  // {tab=Group}: consecutive panels with the same group become one panel with tabs (CSS only).
+  const panels = [];
+  for (let i = 0; i < built.length; ) {
+    const group = built[i].p.attrs.tab;
+    if (!group || group === true) { panels.push(sectionHtml(built[i++])); continue; }
+    const run = [];
+    while (i < built.length && built[i].p.attrs.tab === group) run.push(built[i++]);
+    const name = `ak-tabs-${++rctx.seq}`;
+    const first = run[0].p;
+    const inputs = run.map((r, k) => `<input type="radio" name="${name}" id="${name}-${k}" class="ak-tab-input"${k === 0 ? " checked" : ""}>`).join("");
+    const labels = run.map((r, k) => `<label for="${name}-${k}" class="ak-tab-label">${esc(r.p.title)}</label>`).join("");
+    const bodies = run.map((r) => `<div class="ak-tab-body" id="panel-${esc(r.p.id)}" data-title="${esc(r.p.title)}">${r.body}</div>`).join("");
+    panels.push(`<section class="am-panel ak-panel ak-tabs" data-title="${esc(String(group))}" data-span="3">
+<header class="am-panel-head"><span class="am-panel-id">${esc(first.id)}</span><h2>${esc(String(group))}</h2></header>
+<div class="am-panel-body">${inputs}<div class="ak-tab-bar">${labels}</div>${bodies}</div>
+</section>`);
+  }
+  seenTerms = new Set();
+  const html = linkRefs(sourceBadges(intro + panels.join("\n")), store, cfg);
   ctx.adr = null;
   return { html, errors };
 }

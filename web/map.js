@@ -5,8 +5,8 @@
 import { $, S, esc, gist, href, label, pill, statusLabel, svgEl, tagChip, wrapText } from "./util.js";
 import { md } from "./vendor/crux-render.js";
 
-const NW = 200, NH = 70, GX = 120, GY = 46;
-const AW = 250, AH = 92;
+const NW = 200, NH = 70, GX = 170, GY = 56;
+const AW = 250, AH = 92, AGX = 120;
 const CHAR_W = 6.7;
 
 // Set by a zoom click so the next level can finish the animation.
@@ -54,11 +54,10 @@ edges:
       <marker id="m-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="m-arrow"/></marker>
       <marker id="m-arr-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="m-arrow m-arrow--hot"/></marker>
     </defs><g id="m-stage"></g></svg></div>
-    <div class="ak-maphint">${esc(hint)}</div>
+    <div class="m-foot">${legend(isAdrLevel)}<div class="ak-maphint">${esc(hint)}</div></div>
   </section>
   <aside class="am-panel m-detail" aria-live="polite"><header class="am-panel-head"><span class="am-panel-id">i</span><h2>Details</h2></header><div class="am-panel-body" id="m-detail"></div></aside>
-</div>
-${legend(isAdrLevel)}`;
+</div>`;
 
   const svg = $("#m-svg");
   const stage = $("#m-stage");
@@ -92,7 +91,7 @@ ${legend(isAdrLevel)}`;
   const maxX = Math.max(...items.map((n) => n.x + n.w)) + pad, maxY = Math.max(...items.map((n) => n.y + n.h)) + pad;
   const vw = Math.max(maxX - minX, 600), vh = maxY - minY;
   svg.setAttribute("viewBox", `${minX} ${minY} ${vw} ${vh}`);
-  svg.style.minWidth = `${Math.min(vw, 760)}px`;
+  svg.style.minWidth = `${Math.max(Math.min(vw, 760), Math.round(vw * 0.85))}px`;
   const cx = minX + vw / 2, cy = minY + vh / 2;
 
   const byId = new Map(items.map((n) => [n.id, n]));
@@ -102,9 +101,18 @@ ${legend(isAdrLevel)}`;
     svgEl("text", { class: "m-band", x: minX + pad, y: band.y + 20 }, stage).textContent = band.label.toUpperCase();
   }
   const edgeLayer = svgEl("g", {}, stage);
-  labelBoxes = [];
-  for (const e of edges) drawEdge(edgeLayer, e, byId.get(e.from), byId.get(e.to));
+  // Decision cards in the band under the components route among themselves only.
+  const straight = (node ? node.lines : S.site.architecture.lines) === "straight";
+  const inBand = (n) => !!n.adr && !isAdrLevel;
+  const ends = assignPorts(edges, byId, items);
+  for (const band of [true, false]) {
+    const own = ends.filter((end) => inBand(end.a) === band);
+    routeEdges(own, items.filter((n) => inBand(n) === band), straight);
+  }
+  const pending = ends.map((end) => drawEdge(edgeLayer, end)).filter(Boolean);
   for (const n of items) (n.adr ? drawAdr : n.ghost ? drawGhost : drawNode)(stage, n);
+  // Labels go last, on top of boxes, placed where they hit no box and no other label.
+  placeLabels(svgEl("g", { class: "m-labels" }, stage), pending, items);
   $("#m-meta").textContent = isAdrLevel ? `${items.length} decisions` : `${items.filter((n) => !n.adr).length} components · ${node ? node.deep.length : new Set(Object.values(arch.nodes).flatMap((x) => x.adrs)).size} decisions`;
 
   // ── entrance: finish the zoom started on the previous level ──
@@ -137,6 +145,7 @@ ${legend(isAdrLevel)}`;
       el.classList.toggle("dim", !!selected && !on);
       el.classList.toggle("show", on);
       const p = el.querySelector("path");
+      if (!p) continue; // label-only group in the top layer
       if (p.hasAttribute("marker-end")) p.setAttribute("marker-end", on ? "url(#m-arr-hot)" : "url(#m-arr)");
       if (p.hasAttribute("marker-start")) p.setAttribute("marker-start", on ? "url(#m-arr-hot)" : "url(#m-arr)");
     }
@@ -222,7 +231,9 @@ function legend(isAdrLevel) {
   if (isAdrLevel) {
     return `<div class="ak-legend m-legend">${["open", "proposed", "accepted", "rejected", "superseded"].filter((k) => S.site.statuses[k]).map((k) => `<span><i class="m-key m-key--adr ak-st-${k}"></i>${esc(statusLabel(k))}</span>`).join("")}<span><i class="m-key m-key--line"></i>depends on / supersedes</span><span><i class="m-key m-key--dash"></i>relates / mentions</span></div>`;
   }
-  return `<div class="ak-legend m-legend"><span><i class="m-key m-key--ctx"></i>Context / domain</span><span><i class="m-key m-key--plan"></i>Planned, not designed yet</span><span><i class="m-key m-key--ext"></i>External, infra, store or topic</span><span><i class="m-key"></i>Component, binary or package</span><span><b class="m-key m-key--cnt">3</b>Decisions inside</span></div>`;
+  const techs = [...new Set(Object.values(S.site.architecture.nodes ?? {}).map((n) => n.tech).filter(Boolean))].sort();
+  const tech = techs.map((t) => `<span><i class="m-key m-key--tech tech-${esc(t.replace(/[^a-z0-9-]/g, ""))}"></i>${esc(t)}</span>`).join("");
+  return `<div class="ak-legend m-legend"><span><i class="m-key m-key--ctx"></i>Context (bounded context)</span><span><i class="m-key m-key--svc"></i>Service (deployable)</span><span><i class="m-key m-key--mod"></i>Module (code inside services)</span><span><i class="m-key m-key--ext"></i>External, store or topic</span><span><i class="m-key m-key--plan"></i>Planned</span>${tech}<span><b class="m-key m-key--cnt">3</b>Decisions inside</span></div>`;
 }
 
 // ── items ────────────────────────────────────────────────
@@ -401,7 +412,20 @@ function layout(items, edges) {
   for (const e of links) { nb.get(e.from).push(e.to); nb.get(e.to).push(e.from); }
   const pos = new Map();
   cols.forEach((c) => c.forEach((n, i) => pos.set(n.id, i)));
-  for (let sweep = 0; sweep < 6; sweep++) {
+  const colOf = new Map(placed.map((n) => [n.id, keys.indexOf(rank.get(n.id))]));
+  const crossings = () => {
+    let x = 0;
+    const segs = links.map((e) => [e.from, e.to]).filter(([u, v]) => colOf.get(u) !== colOf.get(v))
+      .map(([u, v]) => (colOf.get(u) < colOf.get(v) ? [u, v] : [v, u]));
+    for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) {
+      const [a, b] = segs[i], [c, d] = segs[j];
+      if (colOf.get(a) !== colOf.get(c) || colOf.get(b) !== colOf.get(d)) continue;
+      if ((pos.get(a) - pos.get(c)) * (pos.get(b) - pos.get(d)) < 0) x++;
+    }
+    return x;
+  };
+  let best = { n: crossings(), order: cols.map((c) => [...c]) };
+  for (let sweep = 0; sweep < 24; sweep++) {
     const seq = sweep % 2 ? [...cols].reverse() : cols;
     for (const c of seq) {
       for (const n of c) {
@@ -411,37 +435,31 @@ function layout(items, edges) {
       c.sort((a, b) => a.bary - b.bary);
       c.forEach((n, i) => pos.set(n.id, i));
     }
+    const n = crossings();
+    if (n < best.n) best = { n, order: cols.map((c) => [...c]) };
   }
+  best.order.forEach((o, k) => { cols[k].splice(0, cols[k].length, ...o); o.forEach((n, i) => pos.set(n.id, i)); });
 
-  // x by column; y: stack, then pull each box toward its neighbours' centers and resolve overlaps.
+  // Clean grid: one box height per level, uniform gaps, every column centered on the same axis.
+  // Real boxes share one height; outside (ghost) boxes share their own, smaller height and sit
+  // centered in the same row slot, so rows stay aligned without empty dashed boxes.
+  const H = Math.max(...placed.map((n) => n.h));
+  const ghosts = placed.filter((n) => n.ghost);
+  const Hg = ghosts.length ? Math.max(...ghosts.map((n) => n.h)) : H;
+  for (const n of placed) n.h = n.ghost ? Hg : H;
+  const colH = (c) => c.length * H + (c.length - 1) * GY;
+  const tallest = Math.max(...cols.map(colH));
+  // A gap grows with the number of edges crossing it, so their labels have room.
+  const crossingGap = cols.map((_, k) => links.filter((e) => {
+    const a = colOf.get(e.from), b = colOf.get(e.to);
+    return Math.min(a, b) <= k && Math.max(a, b) > k;
+  }).length);
   let x = 0;
-  for (const c of cols) {
+  for (const [k, c] of cols.entries()) {
     const w = Math.max(...c.map((n) => n.w));
-    let y = 0;
-    for (const n of c) { n.x = x + (w - n.w) / 2; n.y = y; y += n.h + GY; }
-    x += w + GX;
-  }
-  const settle = (c) => {
-    let floor = -Infinity;
-    for (const n of c) { n.y = Math.max(n.y, floor); floor = n.y + n.h + GY; }
-    // push back up if the column drifted below its wanted position
-    let ceil = Infinity;
-    for (let i = c.length - 1; i >= 0; i--) {
-      const n = c[i];
-      if (n.want != null && n.y > n.want && n.y + n.h + GY <= ceil) n.y = Math.max(n.want, i ? c[i - 1].y + c[i - 1].h + GY : -Infinity);
-      ceil = n.y;
-    }
-  };
-  for (let pass = 0; pass < 4; pass++) {
-    const seq = pass % 2 ? [...cols].reverse() : cols;
-    for (const c of seq) {
-      for (const n of c) {
-        const ms = nb.get(n.id).map((m) => byId.get(m)).filter((m) => m && rank.get(m.id) !== rank.get(n.id));
-        n.want = ms.length ? ms.reduce((a, m) => a + m.y + m.h / 2, 0) / ms.length - n.h / 2 : null;
-        if (n.want != null) n.y = n.want;
-      }
-      settle(c);
-    }
+    let y = (tallest - colH(c)) / 2;
+    for (const n of c) { n.x = x + (w - n.w) / 2; n.y = y + (H - n.h) / 2; y += H + GY; }
+    x += w + Math.min(380, Math.max(GX, 110 + crossingGap[k] * 14));
   }
   const top = Math.min(...placed.map((n) => n.y));
   for (const n of placed) n.y -= top;
@@ -455,7 +473,7 @@ function grid(items, y0, perRow) {
   items.forEach((n, i) => (rowH[Math.floor(i / cols)] = Math.max(rowH[Math.floor(i / cols)] ?? 0, n.h)));
   items.forEach((n, i) => {
     const r = Math.floor(i / cols);
-    n.x = (i % cols) * (colW + GX * 0.45);
+    n.x = (i % cols) * (colW + AGX);
     n.y = y0 + rowH.slice(0, r).reduce((a, b) => a + b + GY, 0);
   });
 }
@@ -463,40 +481,173 @@ function grid(items, y0, perRow) {
 // ── drawing ──────────────────────────────────────────────
 const center = (n) => [n.x + n.w / 2, n.y + n.h / 2];
 
-// Point where the segment from the box center towards (tx, ty) leaves the box.
-function clip(n, tx, ty) {
-  const [cx, cy] = center(n);
-  const dx = tx - cx, dy = ty - cy;
-  if (!dx && !dy) return [cx, cy];
-  const sx = dx ? (n.w / 2 + 4) / Math.abs(dx) : Infinity;
-  const sy = dy ? (n.h / 2 + 4) / Math.abs(dy) : Infinity;
-  const s = Math.min(sx, sy);
-  return [cx + dx * s, cy + dy * s];
+// Each edge leaves and enters through a box side that faces the other box. Ends on one side are
+// spread evenly along it (sorted by where the other box is).
+function assignPorts(edges, byId, boxes) {
+  const sides = new Map();
+  const ends = [];
+  for (const e of edges) {
+    const a = byId.get(e.from), b = byId.get(e.to);
+    if (!a || !b) continue;
+    const [ax, ay] = center(a), [bx, by] = center(b);
+    let sa, sb;
+    if (Math.abs(bx - ax) > (a.w + b.w) / 4) {
+      sa = bx > ax ? "R" : "L";
+      sb = sa === "R" ? "L" : "R";
+    } else {
+      // Same column: straight down/up, unless a box sits between them; then go around on the right.
+      const lo = Math.min(a.y + a.h, b.y + b.h), hi = Math.max(a.y, b.y);
+      const blocked = boxes.some((o) => o !== a && o !== b && o.x < Math.max(a.x + a.w, b.x + b.w) && o.x + o.w > Math.min(a.x, b.x) && o.y < hi && o.y + o.h > lo);
+      if (blocked) sa = sb = "R";
+      else { sa = by > ay ? "B" : "T"; sb = sa === "B" ? "T" : "B"; }
+    }
+    const end = { e, a, b, sa, sb };
+    ends.push(end);
+    for (const [n, side, other, key] of [[a, sa, b, "pa"], [b, sb, a, "pb"]]) {
+      const k = `${n.id}:${side}`;
+      if (!sides.has(k)) sides.set(k, { n, side, list: [] });
+      sides.get(k).list.push({ end, other, key });
+    }
+  }
+  for (const { n, side, list } of sides.values()) {
+    const vert = side === "L" || side === "R";
+    list.sort((u, v) => (vert ? center(u.other)[1] - center(v.other)[1] : center(u.other)[0] - center(v.other)[0]));
+    list.forEach(({ end, key }, i) => {
+      const f = (i + 1) / (list.length + 1);
+      end[key] = vert ? [side === "R" ? n.x + n.w + 3 : n.x - 3, n.y + n.h * f] : [n.x + n.w * f, side === "B" ? n.y + n.h + 3 : n.y - 3];
+    });
+  }
+  return ends;
 }
 
-let labelBoxes = [];
-function drawEdge(layer, e, a, b) {
-  if (!a || !b) return;
-  const [bx, by] = center(b), [ax, ay] = center(a);
-  const p1 = clip(a, bx, by), p2 = clip(b, ax, ay);
-  const g = svgEl("g", { class: `m-edge${e.dashed ? " dashed" : ""}${e.sel ? " onsel" : ""}${e.type ? ` t-${e.type}` : ""}`, "data-from": e.from, "data-to": e.to }, layer);
-  const path = svgEl("path", { d: `M${p1[0].toFixed(1)},${p1[1].toFixed(1)} L${p2[0].toFixed(1)},${p2[1].toFixed(1)}` }, g);
+// Elbow routing. Vertical runs live in the gaps between columns, each on its own track; an edge
+// that spans several columns crosses them on a free horizontal corridor, never through a box.
+function routeEdges(ends, boxes, straight) {
+  if (straight) {
+    for (const end of ends) end.pts = [end.pa, end.pb];
+    return;
+  }
+  const tracks = new Map(); // gap key → requests
+  const want = (key, lo, hi, y1, y2) => {
+    if (!tracks.has(key)) tracks.set(key, { lo, hi, reqs: [] });
+    const r = { y1, y2, v: null };
+    tracks.get(key).reqs.push(r);
+    return r;
+  };
+  // Free x-gap to the right (dir 1) or left (dir -1) of a box edge at x.
+  const gapFrom = (x, dir) => {
+    if (dir > 0) {
+      const next = boxes.filter((o) => o.x > x + 1).map((o) => o.x);
+      return [x, next.length ? Math.min(...next) : x + 60];
+    }
+    const prev = boxes.filter((o) => o.x + o.w < x - 1).map((o) => o.x + o.w);
+    return [prev.length ? Math.max(...prev) : x - 60, x];
+  };
+  const hits = (y, x1, x2) => boxes.some((o) => y > o.y - 8 && y < o.y + o.h + 8 && o.x < Math.max(x1, x2) && o.x + o.w > Math.min(x1, x2));
+  const plans = [];
+  for (const end of ends) {
+    const { pa, pb, sa, sb, a, b } = end;
+    if (sa === "B" || sa === "T") {
+      // Same column, nothing between: one horizontal jog in the row gap.
+      if (Math.abs(pa[0] - pb[0]) < 1) { plans.push(() => [pa, pb]); continue; }
+      const lo = sa === "B" ? a.y + a.h : b.y + b.h, hi = sa === "B" ? b.y : a.y;
+      const r = want(`h:${Math.round(lo)}:${Math.round(hi)}:${Math.round(Math.min(pa[0], pb[0]))}`, lo, hi, pa[0], pb[0]);
+      plans.push(() => [pa, [pa[0], r.v], [pb[0], r.v], pb]);
+      continue;
+    }
+    const d1 = sa === "R" ? 1 : -1;
+    const g1 = gapFrom(sa === "R" ? a.x + a.w : a.x, d1);
+    if (sa === sb) {
+      // Both ends on the right side (same column, blocked): out, along the gap, back in.
+      const r = want(`v:${Math.round(g1[0])}:${Math.round(g1[1])}`, g1[0], g1[1], pa[1], pb[1]);
+      plans.push(() => [pa, [r.v, pa[1]], [r.v, pb[1]], pb]);
+      continue;
+    }
+    const g2 = gapFrom(sb === "L" ? b.x : b.x + b.w, sb === "L" ? -1 : 1);
+    if (Math.round(g1[0]) === Math.round(g2[0]) && Math.round(g1[1]) === Math.round(g2[1])) {
+      // Neighbouring columns: one vertical run in the shared gap.
+      if (Math.abs(pa[1] - pb[1]) < 1) { plans.push(() => [pa, pb]); continue; }
+      const r = want(`v:${Math.round(g1[0])}:${Math.round(g1[1])}`, g1[0], g1[1], pa[1], pb[1]);
+      plans.push(() => [pa, [r.v, pa[1]], [r.v, pb[1]], pb]);
+      continue;
+    }
+    // Several columns apart: pick a free corridor across the columns between them.
+    const xa = d1 > 0 ? g1[1] : g1[0], xb = d1 > 0 ? g2[0] : g2[1];
+    const span = boxes.filter((o) => o.x < Math.max(xa, xb) && o.x + o.w > Math.min(xa, xb));
+    const cands = [pa[1], pb[1]];
+    const ys = span.flatMap((o) => [o.y, o.y + o.h]).sort((u, v) => u - v);
+    if (ys.length) cands.push(ys[0] - 22, ys.at(-1) + 22);
+    const sorted = [...span].sort((u, v) => u.y - v.y);
+    for (let i = 1; i < sorted.length; i++) if (sorted[i].y - (sorted[i - 1].y + sorted[i - 1].h) > 16) cands.push((sorted[i - 1].y + sorted[i - 1].h + sorted[i].y) / 2);
+    const free = cands.filter((y) => !hits(y, xa, xb));
+    const cy = (free.length ? free : cands).sort((u, v) => Math.abs(u - pa[1]) + Math.abs(u - pb[1]) - (Math.abs(v - pa[1]) + Math.abs(v - pb[1])))[0];
+    const r1 = Math.abs(cy - pa[1]) < 1 ? null : want(`v:${Math.round(g1[0])}:${Math.round(g1[1])}`, g1[0], g1[1], pa[1], cy);
+    const r2 = Math.abs(cy - pb[1]) < 1 ? null : want(`v:${Math.round(g2[0])}:${Math.round(g2[1])}`, g2[0], g2[1], cy, pb[1]);
+    plans.push(() => {
+      const pts = [pa];
+      if (r1) pts.push([r1.v, pa[1]], [r1.v, cy]);
+      if (r2) pts.push([r2.v, cy], [r2.v, pb[1]]);
+      pts.push(pb);
+      return pts;
+    });
+  }
+  // Tracks: spread the runs of one gap evenly across it, ordered to cross as little as possible.
+  for (const { lo, hi, reqs } of tracks.values()) {
+    reqs.sort((u, v) => Math.min(u.y1, u.y2) - Math.min(v.y1, v.y2) || Math.max(u.y1, u.y2) - Math.max(v.y1, v.y2));
+    const pad = Math.min(18, (hi - lo) / 4);
+    reqs.forEach((r, i) => (r.v = lo + pad + ((hi - lo - 2 * pad) * (i + 1)) / (reqs.length + 1)));
+  }
+  ends.forEach((end, i) => (end.pts = dedupe(plans[i]())));
+}
+
+const dedupe = (pts) => pts.filter((p, i) => !i || Math.abs(p[0] - pts[i - 1][0]) > 0.5 || Math.abs(p[1] - pts[i - 1][1]) > 0.5);
+
+function drawEdge(layer, end) {
+  const { e, pts } = end;
+  const attrs = { class: `m-edge${e.dashed ? " dashed" : ""}${e.sel ? " onsel" : ""}${e.type ? ` t-${e.type}` : ""}`, "data-from": e.from, "data-to": e.to };
+  const g = svgEl("g", attrs, layer);
+  const path = svgEl("path", { d: pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ") }, g);
   if (!e.plain) path.setAttribute("marker-end", "url(#m-arr)");
   if (e.both) path.setAttribute("marker-start", "url(#m-arr)");
-  if (e.label) {
-    const [ox, oy] = e.lo ?? [0, 0];
+  return e.label ? { e, pts, attrs } : null;
+}
+
+// Labels sit on a segment of their line: long horizontal runs first, then the rest. The first spot
+// that overlaps no box and no placed label wins; otherwise the spot with the least overlap.
+function placeLabels(layer, pending, items) {
+  const boxes = items.map((n) => ({ x1: n.x - 3, y1: n.y - 3, x2: n.x + n.w + 3, y2: n.y + n.h + 3 }));
+  const placed = [];
+  const overlap = (r, o) => Math.max(0, Math.min(r.x2, o.x2) - Math.max(r.x1, o.x1)) * Math.max(0, Math.min(r.y2, o.y2) - Math.max(r.y1, o.y1));
+  const length = (pts) => pts.slice(1).reduce((a, p, i) => a + Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), 0);
+  pending.sort((u, v) => length(u.pts) - length(v.pts));
+  for (const { e, pts, attrs } of pending) {
     const text = e.label.length > 34 ? e.label.slice(0, 33) + "…" : e.label;
-    const w = text.length * 5.9 + 10;
-    // Slide along the line until the label clears earlier labels (unless the author placed it).
-    const at = (f) => [p1[0] + (p2[0] - p1[0]) * f + ox, p1[1] + (p2[1] - p1[1]) * f + oy];
-    const hits = ([x, y]) => labelBoxes.some((b) => Math.abs(b.x - x) < (b.w + w) / 2 + 2 && Math.abs(b.y - y) < 19);
-    let f = e.lp ?? 0.5;
-    if (e.lp == null) for (const t of [0.5, 0.35, 0.65, 0.25, 0.75, 0.2, 0.8]) if (!hits(at(t))) { f = t; break; }
-    const [mx, my] = at(f);
-    labelBoxes.push({ x: mx, y: my, w });
+    const w = text.length * 5.9 + 10, h = 17;
+    const [ox, oy] = e.lo ?? [0, 0];
+    const segs = pts.slice(1).map((p, i) => ({ p1: pts[i], p2: p, len: Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), flat: Math.abs(p[1] - pts[i][1]) < 0.5 }));
+    const order = [...segs].sort((u, v) => (v.flat && v.len > w + 8) - (u.flat && u.len > w + 8) || v.len - u.len);
+    const rect = (x, y) => ({ x, y, x1: x - w / 2, y1: y - h / 2 - 1, x2: x + w / 2, y2: y + h / 2 + 1 });
+    const tries = [];
+    if (e.lp != null) {
+      const s0 = order[0];
+      tries.push(rect(s0.p1[0] + (s0.p2[0] - s0.p1[0]) * e.lp + ox, s0.p1[1] + (s0.p2[1] - s0.p1[1]) * e.lp + oy));
+    } else {
+      for (const sg of order) for (const t of [0.5, 0.35, 0.65, 0.2, 0.8]) for (const off of sg.flat ? [0, -13, 13] : [0]) {
+        tries.push({ ...rect(sg.p1[0] + (sg.p2[0] - sg.p1[0]) * t + ox, sg.p1[1] + (sg.p2[1] - sg.p1[1]) * t + off + oy), off });
+      }
+    }
+    let best = null;
+    for (const r of tries) {
+      const cost = boxes.reduce((c, o) => c + overlap(r, o), 0) * 2 + placed.reduce((c, o) => c + overlap(r, o), 0) * 3 + Math.abs(r.off ?? 0) * 0.5;
+      if (!best || cost < best.cost) best = { r, cost };
+      if (cost === 0) break;
+    }
+    const { r } = best;
+    placed.push(r);
+    const g = svgEl("g", attrs, layer);
     const lb = svgEl("g", { class: "lbl" }, g);
-    svgEl("rect", { x: mx - w / 2, y: my - 9, width: w, height: 17 }, lb);
-    svgEl("text", { x: mx, y: my + 4, "text-anchor": "middle" }, lb).textContent = text;
+    svgEl("rect", { x: r.x - w / 2, y: r.y - 9, width: w, height: h }, lb);
+    svgEl("text", { x: r.x, y: r.y + 4, "text-anchor": "middle" }, lb).textContent = text;
   }
 }
 
@@ -511,12 +662,17 @@ function drawGroup(stage, grp, byId) {
   svgEl("text", { x: x + 8, y: y - 6 }, g).textContent = grp.label;
 }
 
+// Infra boxes carry their technology: a color (by tech, then by kind) and the name in the tag line.
+const techCls = (n) => (n.tech ? ` tech tech-${n.tech.replace(/[^a-z0-9-]/g, "")}` : "");
+const tagText = (n) => (n.tag ?? (n.tech ? `${n.kind} · ${n.tech}` : String(n.kind))).toUpperCase();
+
 function drawNode(stage, it) {
   const n = it.node;
   const drill = drillable(n);
-  const g = svgEl("g", { class: `m-node k-${n.kind}${drill ? " drill" : ""}`, tabindex: 0, role: "button", "data-id": n.id, "aria-label": `${n.label}${drill ? ", zoomable" : ""}` }, stage);
+  const g = svgEl("g", { class: `m-node k-${n.kind}${techCls(n)}${drill ? " drill" : ""}`, tabindex: 0, role: "button", "data-id": n.id, "aria-label": `${n.label}${drill ? ", zoomable" : ""}` }, stage);
   svgEl("rect", { class: "box", x: it.x, y: it.y, width: it.w, height: it.h }, g);
-  svgEl("text", { class: "tag", x: it.x + 8, y: it.y + 14 }, g).textContent = (n.tag ?? String(n.kind)).toUpperCase();
+  if (/^(module|package|component)$/.test(n.kind)) svgEl("rect", { class: "modbar", x: it.x, y: it.y, width: 4, height: it.h }, g);
+  svgEl("text", { class: "tag", x: it.x + 8, y: it.y + 14 }, g).textContent = tagText(n);
   it.labelLines.forEach((l, i) => (svgEl("text", { class: "label", x: it.x + 8, y: it.y + 32 + i * 17 }, g).textContent = l));
   const top = it.y + 32 + it.labelLines.length * 17 - 1;
   it.lines.forEach((l, i) => (svgEl("text", { class: "sub", x: it.x + 8, y: top + i * 14 }, g).textContent = l));
@@ -535,9 +691,14 @@ function drawNode(stage, it) {
 
 function drawGhost(stage, it) {
   const n = it.ghost;
-  const g = svgEl("g", { class: `m-node m-ghost k-${n.kind}`, tabindex: 0, role: "button", "data-id": it.id, "aria-label": `${n.label}, outside this level` }, stage);
+  const g = svgEl("g", { class: `m-node m-ghost k-${n.kind}${techCls(n)}`, tabindex: 0, role: "button", "data-id": it.id, "aria-label": `${n.label}, outside this level` }, stage);
   svgEl("rect", { class: "box", x: it.x, y: it.y, width: it.w, height: it.h }, g);
-  svgEl("text", { class: "tag", x: it.x + 8, y: it.y + 14 }, g).textContent = `${(n.tag ?? n.kind).toUpperCase()} · OUTSIDE`;
+  // Fit the tag line: drop "OUTSIDE" first (the dashed border already says it), then cut.
+  const max = Math.floor((it.w - 16) / 6.4);
+  let tag = `${tagText(n)} · OUTSIDE`;
+  if (tag.length > max) tag = tagText(n);
+  if (tag.length > max) tag = tag.slice(0, max - 1) + "…";
+  svgEl("text", { class: "tag", x: it.x + 8, y: it.y + 14 }, g).textContent = tag;
   it.labelLines.forEach((l, i) => (svgEl("text", { class: "label", x: it.x + 8, y: it.y + 31 + i * 17 }, g).textContent = l));
   const top = it.y + 31 + it.labelLines.length * 17 - 1;
   it.lines.forEach((l, i) => (svgEl("text", { class: "sub", x: it.x + 8, y: top + i * 14 }, g).textContent = l));

@@ -39,6 +39,7 @@ type Config struct {
 	Share        string             `yaml:"share"`
 	Me           string             `yaml:"me"`
 	Tags         map[string]TagInfo `yaml:"tags"`
+	Glossary     map[string]string  `yaml:"glossary"` // term → short definition, shown on hover
 
 	Root       string `yaml:"-"`
 	File       string `yaml:"-"`

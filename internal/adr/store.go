@@ -75,6 +75,8 @@ type Node struct {
 	ID       string   `json:"id"`
 	Label    string   `json:"label"`
 	Kind     string   `json:"kind"`
+	Tech     string   `json:"tech"`  // infra technology (redis, kafka, postgres…): colors the box
+	Lines    string   `json:"lines"` // "straight" draws this level with straight lines instead of elbows
 	Sub      string   `json:"sub"`
 	Desc     string   `json:"desc"`
 	Tags     []string `json:"tags"`
@@ -116,6 +118,7 @@ type Architecture struct {
 	Nodes  map[string]*Node `json:"nodes"`
 	Edges  []ArchEdge       `json:"edges"`
 	Groups []Group          `json:"groups"`
+	Lines  string           `json:"lines"` // top level: "straight" or "" (elbow)
 	order  []string
 }
 
@@ -394,7 +397,7 @@ func loadArchitecture(cfg *config.Config, s *Store) *Architecture {
 		s.Problems = append(s.Problems, Problem{File: cfg.Architecture, Message: "architecture: " + err.Error()})
 		return nil
 	}
-	a := &Architecture{Title: Str(raw["title"]), Desc: Str(raw["desc"]), Nodes: map[string]*Node{}, Roots: []string{}, Edges: []ArchEdge{}, Groups: groups(raw["groups"])}
+	a := &Architecture{Title: Str(raw["title"]), Desc: Str(raw["desc"]), Lines: strings.ToLower(Str(raw["lines"])), Nodes: map[string]*Node{}, Roots: []string{}, Edges: []ArchEdge{}, Groups: groups(raw["groups"])}
 	if a.Title == "" {
 		a.Title = "Architecture"
 	}
@@ -408,7 +411,7 @@ func loadArchitecture(cfg *config.Config, s *Store) *Architecture {
 				s.Problems = append(s.Problems, Problem{File: cfg.Architecture, Message: "node without id"})
 				continue
 			}
-			node := &Node{ID: id, Label: Str(firstOf(n["label"], id)), Kind: Str(firstOf(n["kind"], "component")), Sub: Str(n["sub"]), Desc: Str(n["desc"]),
+			node := &Node{ID: id, Label: Str(firstOf(n["label"], id)), Kind: Str(firstOf(n["kind"], "component")), Tech: strings.ToLower(Str(n["tech"])), Lines: strings.ToLower(Str(n["lines"])), Sub: Str(n["sub"]), Desc: Str(n["desc"]),
 				Tags: lower(AsList(n["tags"])), Parent: parent, Docs: orEmpty(AsList(n["docs"])), Paths: orEmpty(AsList(n["paths"])), Groups: groups(n["groups"]), Children: []string{}}
 			for _, x := range AsList(n["adrs"]) {
 				node.Adrs = append(node.Adrs, RefID(x, cfg.Digits))
