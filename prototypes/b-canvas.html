@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B · Decision canvas</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+.wrap { max-width: 1480px; margin: 0 auto; padding: 18px 20px 80px; }
+.top-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; margin-bottom: 14px; }
+@media (max-width: 1000px) { .top-grid { grid-template-columns: minmax(0, 1fr); } }
+.q { border: 2px solid var(--warn); background: var(--warn-bg); padding: 14px 16px; }
+.q small { font: 700 10.5px var(--mono); letter-spacing: 0.08em; color: #fff; background: var(--warn); padding: 3px 7px; }
+.q h1 { margin: 8px 0 6px; font-size: 20px; line-height: 1.35; }
+.q .meta { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 12.5px; color: var(--ink-2); }
+.ready { display: grid; gap: 8px; }
+.ready .r { display: grid; grid-template-columns: 120px minmax(0, 1fr) 46px; gap: 8px; align-items: center; font-size: 12.5px; }
+.ready .bar { height: 8px; }
+.ready .bar span { background: var(--ink); }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; align-items: start; margin-top: 14px; }
+@media (max-width: 1100px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.board { display: grid; grid-template-columns: repeat(3, minmax(250px, 1fr)) 150px; gap: 12px; overflow-x: auto; align-items: start; }
+.col { background: var(--paper); border: 1.5px solid var(--line); display: flex; flex-direction: column; min-width: 0; }
+.col.lead { box-shadow: 0 0 0 3px var(--green-bg); border-color: var(--green); }
+.col-h { padding: 10px 12px; border-bottom: 1.5px solid var(--line); }
+.col-h .t { display: flex; gap: 8px; align-items: center; font-weight: 700; }
+.col-h .sub { font-size: 12px; color: var(--ink-2); margin: 4px 0 6px; }
+.col-h .stats { display: flex; justify-content: space-between; align-items: center; font: 11px var(--mono); color: var(--ink-2); }
+.score { font: 700 18px var(--mono); }
+.lane { padding: 10px 10px 4px; display: grid; gap: 8px; }
+.lane-h { display: flex; justify-content: space-between; font: 600 10.5px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+.lane-h .add { border: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; text-transform: none; letter-spacing: 0; }
+.merged-note { font: 11px var(--mono); color: var(--agent); padding: 4px 8px; border: 1px dashed var(--agent); background: var(--agent-bg); }
+.addcol { border: 1.5px dashed var(--ink-3); background: transparent; color: var(--ink-2); min-height: 120px; display: grid; place-items: center; cursor: pointer; font-size: 13px; }
+.form { border: 1.5px solid var(--accent); padding: 8px; display: grid; gap: 6px; background: var(--paper); }
+.form .input, .form .textarea { font-size: 13px; padding: 6px 8px; }
+.form .textarea { min-height: 50px; }
+.drawer .pn + .pn { margin-top: 14px; }
+.sug { padding: 10px 12px; border-bottom: 1px solid var(--line-2); font-size: 13px; }
+.sug:last-child { border-bottom: 0; }
+.sug .k { font: 600 10px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--agent); }
+.sug .acts { display: flex; gap: 6px; margin-top: 6px; }
+.sug.done { opacity: 0.5; }
+.feed { font-size: 12.5px; }
+.feed div { display: flex; gap: 8px; align-items: flex-start; padding: 6px 12px; border-bottom: 1px solid var(--line-2); }
+.feed time { margin-left: auto; color: var(--ink-3); font: 11px var(--mono); white-space: nowrap; }
+.mx { width: 100%; border-collapse: separate; border-spacing: 4px; }
+.mx th { font: 11px var(--mono); color: var(--ink-2); font-weight: 400; text-align: left; padding: 4px 6px; }
+.mx td { vertical-align: middle; }
+.mx td.c { text-align: center; padding: 8px 6px; background: color-mix(in srgb, var(--green) calc(var(--r) * 55%), var(--fill)); }
+.mx td.c b { font: 700 15px var(--mono); display: block; }
+.spread { display: flex; gap: 2px; justify-content: center; margin-top: 3px; }
+.spread i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-2); opacity: 0.6; }
+.mine { display: inline-flex; gap: 2px; margin-top: 4px; }
+.mine button { width: 16px; height: 16px; border: 1px solid var(--line-2); background: var(--paper); font: 9px var(--mono); cursor: pointer; padding: 0; }
+.mine button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+.w { display: inline-flex; gap: 2px; }
+.w button { width: 12px; height: 12px; border: 1px solid var(--ink-3); background: var(--paper); padding: 0; cursor: pointer; }
+.w button.on { background: var(--ink-2); border-color: var(--ink-2); }
+.totals { display: grid; gap: 10px; }
+.tot { display: grid; grid-template-columns: 26px 140px minmax(0, 1fr) 40px; gap: 10px; align-items: center; font-size: 13px; }
+.tot .bar { height: 16px; }
+.tot.best { font-weight: 700; }
+.tot.best .bar span { background: var(--green); }
+.tot .bar span { background: var(--ink-3); }
+.picks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 900px) { .picks, .board { grid-template-columns: minmax(0, 1fr); } }
+.pk { border: 1.5px solid var(--line-2); padding: 12px; background: var(--paper); cursor: pointer; text-align: left; display: flex; flex-direction: column; justify-content: flex-start; }
+.pk-who { display: inline-flex; flex-direction: column; width: 62px; font: 10px var(--mono); color: var(--ink-2); overflow: hidden; }
+.pk-who > span:nth-child(2) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk.on { border: 2.5px solid var(--green); background: var(--green-bg); }
+.pk .who { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.pk .quote { font-size: 12.5px; color: var(--ink-2); margin-top: 8px; border-left: 2px solid var(--line-2); padding-left: 8px; }
+.conf { height: 4px; background: var(--line-2); margin-top: 3px; }
+.conf span { display: block; height: 100%; background: var(--ink); }
+.adr-hero { border: 2px solid var(--green); background: var(--green-bg); padding: 14px 16px; }
+.adr-hero small { font: 700 10.5px var(--mono); letter-spacing: 0.08em; color: #fff; background: var(--green); padding: 3px 7px; }
+.adr-hero div { margin-top: 8px; font-size: 17px; font-weight: 600; line-height: 1.45; }
+.oc { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.oc > div { border: 1.5px solid var(--line-2); padding: 10px; font-size: 13px; }
+.oc .ok { border: 2.5px solid var(--green); background: var(--green-bg); }
+.oc .no h4 { text-decoration: line-through; color: var(--ink-2); }
+.oc h4 { margin: 4px 0; font-size: 14px; }
+.presence { display: flex; align-items: center; gap: 8px; }
+.presence .live { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-bg); }
+</style>
+</head>
+<body>
+<header class="pt-top">
+  <a class="pt-brand" href="index.html"><i>ADR</i></a>
+  <div class="pt-crumbs"><span>abtinokhovat/x</span>/<span>decisions</span>/<b>ADR-0020</b></div>
+  <span class="pt-proto">Prototype B · Decision canvas</span>
+  <div class="presence"><span class="live"></span><span class="avs"></span></div>
+  <label class="mono" style="font-size:11px;color:var(--ink-2)">View as <select class="select" id="viewer" style="width:auto;padding:4px 6px;display:inline-block"></select></label>
+</header>
+<main class="wrap">
+  <div class="top-grid">
+    <section class="q" id="q"></section>
+    <section class="pn"><div class="pn-head"><span class="pn-id">%</span><h3>Readiness</h3><span class="pn-meta" id="readyMeta"></span></div><div class="pn-body ready" id="ready"></div></section>
+  </div>
+  <nav class="steps" id="steps"></nav>
+  <div class="layout">
+    <section id="stage"></section>
+    <aside class="drawer" id="drawer"></aside>
+  </div>
+</main>
+<script src="data.js"></script>
+<script>
+const { esc, av, who, ref, linkify, toast } = H;
+const ST = STORY;
+const S = {
+  viewer: "abtinokhovat", stage: /^#\d$/.test(location.hash) ? +location.hash.slice(1) : 2, done: new Set(), plusOn: new Set(), forms: {}, extra: [], mineScores: JSON.parse(JSON.stringify(ST.scores.abtinokhovat)),
+  weights: ST.criteria.map((c) => c.w), choice: null, recorded: false, asks: new Set(), merged: true,
+};
+const STAGES = [["Frame", "question + context"], ["Options", "3 drafted"], ["Arguments", "pros & cons with reasons"], ["Weigh", "score criteria"], ["Decide", "picks → decision"], ["Record", "agent writes ADR"]];
+const nm = (k) => ST.options.find((o) => o.key === k).name;
+
+document.querySelector(".presence .avs").innerHTML = ["abtinokhovat", "sara-dev", "mehdi-ops", "advisor"].map((h) => av(h, "sm")).join("");
+document.getElementById("viewer").innerHTML = Object.entries(ST.people).filter(([, p]) => !p.agent).map(([h, p]) => `<option value="${h}">@${h}</option>`).join("");
+document.getElementById("viewer").onchange = (e) => { S.viewer = e.target.value; render(); };
+
+function totals() {
+  const C = ST.criteria, W = S.weights.reduce((a, b) => a + b, 0);
+  const people = { ...ST.scores, abtinokhovat: S.mineScores };
+  const ms = Object.values(people);
+  return ST.options.map((_, j) => Math.round((ms.reduce((s, m) => s + C.reduce((a, c, i) => a + S.weights[i] * m[i][j], 0) / (W * 5), 0) / ms.length) * 100));
+}
+const args = () => ST.args.concat(S.extra);
+
+function header() {
+  document.getElementById("q").innerHTML = `<small>DECISION TO MAKE · ADR-0020</small><h1>${esc(ST.adr.question)}</h1><div class="meta">${av("abtinokhovat", "sm")} ${who("abtinokhovat")} decides by <b>${ST.adr.due}</b> · ${ST.adr.related.map((r) => `${ref(r.id)} <span class="dim">${r.rel}</span>`).join(" · ")}</div>`;
+  const picks = Object.values(ST.picks).filter(Boolean).length, total = Object.keys(ST.picks).length;
+  const unv = args().filter((a) => a.flag?.kind === "warn").length;
+  const scored = Object.keys(ST.scores).length;
+  const rows = [["Picks in", picks, total], ["Scored", scored, total], ["Asks answered", ST.asks.filter((a) => a.state === "answered").length + S.asks.size, ST.asks.length], ["Claims verified", 3, 3 + unv]];
+  document.getElementById("ready").innerHTML = rows.map(([l, a, b]) => `<div class="r"><span>${l}</span><span class="bar"><span style="width:${(a / b) * 100}%"></span></span><span class="mono">${a}/${b}</span></div>`).join("");
+  const pct = Math.round((rows.reduce((s, [, a, b]) => s + a / b, 0) / rows.length) * 100);
+  document.getElementById("readyMeta").textContent = `${pct}% · ${pct >= 75 ? "ready to decide" : "gathering"}`;
+}
+
+function steps() {
+  document.getElementById("steps").innerHTML = STAGES.map(([t, s], i) => `<button class="step ${i < S.stage ? "done" : ""} ${i === S.stage ? "now" : ""}" data-stage="${i}"><b>${i < S.stage ? "✓" : i + 1}</b><span>${t}<small>${s}</small></span></button>`).join("");
+}
+
+function boardStage() {
+  const tot = totals();
+  const lead = tot.indexOf(Math.max(...tot));
+  const cols = ST.options.map((o, j) => {
+    const list = args().filter((a) => a.opt === o.key);
+    const shown = list.filter((a) => !(S.merged && a.flag?.kind === "dup"));
+    const dups = list.length - shown.length;
+    const pickers = Object.entries(ST.picks).filter(([, p]) => p?.opt === o.key).map(([h]) => h);
+    const card = (a) => `<div class="arg arg--${a.kind}"><div class="arg-top">${av(a.by, "sm")} <span class="mono">#${a.id}</span> @${a.by}</div>${esc(a.text)}${a.why ? `<div class="arg-why">${linkify(a.why)}</div>` : `<div class="arg-why" style="color:var(--warn)">no reason yet</div>`}<div class="arg-foot"><button class="plus ${S.plusOn.has(a.id) ? "on" : ""}" data-plus="${a.id}">▲ ${a.plus.length + (S.plusOn.has(a.id) ? 1 : 0)}</button><span class="avs">${a.plus.slice(0, 3).map((h) => av(h, "sm")).join("")}</span>${a.flag && a.flag.kind !== "dup" ? `<span class="flag ${a.flag.kind === "warn" ? "flag--warn" : a.flag.kind === "ok" ? "flag--ok" : ""}">${esc(a.flag.text)}</span>` : ""}</div></div>`;
+    const lane = (kind, label) => {
+      const f = S.forms[`${o.key}-${kind}`];
+      return `<div class="lane"><div class="lane-h"><span>${label} · ${shown.filter((a) => a.kind === kind).length}</span><button class="add" data-form="${o.key}-${kind}">+ add ${kind}</button></div>
+      ${shown.filter((a) => a.kind === kind).sort((a, b) => b.plus.length - a.plus.length).map(card).join("")}
+      ${f ? `<div class="form"><input class="input" placeholder="${kind === "pro" ? "Benefit" : "Cost or risk"} in one line" id="t-${o.key}-${kind}"><textarea class="textarea" placeholder="Why? Evidence, numbers, ADR links…" id="w-${o.key}-${kind}"></textarea><div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn btn--sm" data-form="${o.key}-${kind}">Cancel</button><button class="btn btn--sm btn--primary" data-save="${o.key}-${kind}">Add</button></div></div>` : ""}</div>`;
+    };
+    return `<div class="col ${j === lead ? "lead" : ""}"><div class="col-h"><div class="t"><span class="opt-key">${o.key}</span>${esc(o.name)}</div><div class="sub">${esc(o.sub)}</div>
+    <div class="stats"><span>${av(o.by, "sm")} by @${o.by}</span><span class="avs">${pickers.map((h) => av(h, "sm")).join("")}</span><span class="score" style="color:${j === lead ? "var(--green)" : "var(--ink)"}">${tot[j]}</span></div></div>
+    ${lane("pro", "Pros")}${lane("con", "Cons")}${dups ? `<div style="padding:4px 10px 10px"><span class="merged-note">@advisor merged ${dups} duplicate · <a href="#" data-act="unmerge">show</a></span></div>` : `<div style="height:10px"></div>`}</div>`;
+  });
+  return `<div class="board">${cols.join("")}<button class="addcol" data-act="addopt">＋ Add option<br><span class="mono" style="font-size:11px">or ask @architect</span></button></div>`;
+}
+
+function weighStage() {
+  const people = { ...ST.scores, abtinokhovat: S.mineScores };
+  const tot = totals(), best = Math.max(...tot);
+  const rows = ST.criteria.map((c, i) => `<tr><th style="font:500 13px var(--sans);color:var(--ink)">${esc(c.name)}<div class="w" title="weight">${[1, 2, 3].map((n) => `<button class="${S.weights[i] >= n ? "on" : ""}" data-w="${i}:${n}"></button>`).join("")}</div></th>${ST.options.map((o, j) => {
+    const vals = Object.values(people).map((m) => m[i][j]);
+    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    return `<td class="c" style="--r:${(avg / 5).toFixed(2)}"><b>${avg.toFixed(1)}</b><div class="spread">${vals.map((v) => `<i style="opacity:${0.25 + v * 0.15}"></i>`).join("")}</div>${S.viewer === "abtinokhovat" ? `<div class="mine">${[1, 2, 3, 4, 5].map((n) => `<button class="${S.mineScores[i][j] === n ? "on" : ""}" data-score="${i}:${j}:${n}">${n}</button>`).join("")}</div>` : ""}</td>`;
+  }).join("")}</tr>`).join("");
+  return `<div class="pn"><div class="pn-head"><span class="pn-id">W</span><h3>Weigh options</h3><span class="pn-meta">avg of 4 people · dots = each person · your row is editable</span></div><div class="pn-body">
+  <div style="display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr);gap:20px;align-items:start">
+  <table class="mx"><thead><tr><th>Criterion · weight</th>${ST.options.map((o) => `<th>${o.key} — ${esc(o.name)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>
+  <div><div class="lbl mono dim" style="font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Weighted score · live</div><div class="totals">${ST.options.map((o, j) => `<div class="tot ${tot[j] === best ? "best" : ""}"><span class="opt-key">${o.key}</span><span>${esc(o.name)}</span><span class="bar"><span style="width:${tot[j]}%"></span></span><span class="mono">${tot[j]}</span></div>`).join("")}</div>
+  <div class="agent-card" style="padding:14px 12px 10px;margin-top:18px;font-size:13px">Weights matter here: if <b>Replay</b> goes to 3, A and C tie. Sara’s dissent is about that weight — worth one line in the decision.</div></div></div></div></div>`;
+}
+
+function decideStage() {
+  const tot = totals();
+  return `<div class="pn"><div class="pn-head"><span class="pn-id">D</span><h3>Picks and decision</h3><span class="pn-meta">${Object.values(ST.picks).filter(Boolean).length} of 5 picked</span></div><div class="pn-body">
+  <div class="picks">${ST.options.map((o, j) => {
+    const ps = Object.entries(ST.picks).filter(([, p]) => p?.opt === o.key);
+    return `<button class="pk ${S.choice === o.key ? "on" : ""}" data-choose="${o.key}"><div style="display:flex;justify-content:space-between;align-items:center"><b>${o.key} — ${esc(o.name)}</b><span class="mono" style="font-weight:700">${tot[j]}</span></div>
+    <div class="who">${ps.map(([h, p]) => `<span class="pk-who">${av(h)}<span>@${h}</span><span class="conf"><span style="width:${p.conf * 100}%"></span></span></span>`).join("") || `<span class="dim" style="font-size:12px">no picks</span>`}</div>
+    ${ps.map(([h, p]) => `<div class="quote">“${esc(p.why)}” — @${h}</div>`).join("")}</button>`;
+  }).join("")}</div>
+  <div class="sep"></div>
+  ${S.viewer === "abtinokhovat" ? `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="muted" style="font-size:13px">${S.choice ? `Deciding <b>${S.choice} — ${esc(nm(S.choice))}</b>. @advisor records @sara-dev’s dissent with a revisit trigger.` : "Select an option above to decide."}</span><span style="margin-left:auto;display:flex;gap:8px"><button class="btn" data-act="nudge">Nudge @lena-fe</button><button class="btn btn--green" data-act="decide" ${S.choice ? "" : "disabled"}>Decide ${S.choice ?? ""} →</button></span></div>` : `<div class="muted">Your pick: <select class="select" style="width:auto;display:inline-block;padding:4px"><option>C — PostgreSQL only</option><option>A — Redpanda</option><option>B — NATS</option></select> confidence <input type="range" min="0" max="100" value="60"> <button class="btn btn--sm btn--primary" data-act="pick">Submit pick</button></div>`}
+  </div></div>`;
+}
+
+function recordStage() {
+  const c = S.choice ?? "C";
+  return `<div class="pn"><div class="pn-head"><span class="pn-id">✓</span><h3>ADR-0020 — Message broker for v1</h3><span class="pn-meta">${S.recorded ? "accepted · merged" : "draft by @advisor"}</span></div><div class="pn-body">
+  <div class="adr-hero"><small>DECISION · ${S.recorded ? "ACCEPTED" : "DRAFT"}</small><div>Run v1 without a broker (option ${c}). PostgreSQL holds the raw update table, job tables and the outbox. Keep raw rows 14 days. ADR-0004 stays the scale path.</div></div>
+  <div class="oc">${ST.options.map((o) => `<div class="${o.key === c ? "ok" : "no"}"><span class="pill ${o.key === c ? "pill--accepted" : "pill--err"}">${o.key === c ? "chosen" : "rejected"}</span><h4>${o.key} — ${esc(o.name)}</h4>${args().filter((a) => a.opt === o.key && a.flag?.kind !== "dup").slice(0, 3).map((a) => `<div style="color:${a.kind === "pro" ? "var(--green)" : "var(--err)"}">${a.kind === "pro" ? "+" : "−"} <span style="color:var(--ink)">${esc(a.text)}</span></div>`).join("")}</div>`).join("")}</div>
+  <div class="sep"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px"><div><b style="font-size:13px">Dissent</b><div class="arg arg--q" style="margin-top:6px">${av("sara-dev", "sm")} @sara-dev prefers A — “${esc(ST.picks["sara-dev"].why)}”<div class="arg-why">Revisit when a consumer needs replay &gt; 14 days.</div></div></div>
+  <div><b style="font-size:13px">Agent cleanup</b><div id="cl">${["Arguments rewritten into plain style", "1 duplicate merged", "Dissent + trigger recorded", "ADR-0004 → scale path; architecture.yaml linked", "adr lint passed", "PR #42 opened → main"].map((s, i) => `<div class="check ${S.recorded ? "ok" : "wait"}"><i>${S.recorded ? "✓" : "·"}</i>${s}</div>`).join("")}</div></div></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">${S.recorded ? `<span class="pill pill--accepted">ADR-0020 accepted · PR #42 merged</span>` : `<button class="btn" data-act="md">View markdown</button><button class="btn btn--green" data-act="record">Record &amp; open PR</button>`}</div>
+  <div id="mdv" class="hidden" style="margin-top:12px"><div class="md-preview">${esc(H.finalMd(c))}</div></div></div></div>`;
+}
+
+function drawer() {
+  const sugs = [
+    { id: "s1", k: "duplicate", t: "#4 “another cluster to watch” repeats #3. Merged; @lena-fe notified.", acts: [["Undo", "unmerge"]], done: S.merged },
+    { id: "s2", k: "unverified", t: "#7 says NATS on Darkube is managed. Marketplace apps run in our namespace.", acts: [["Ask @mehdi-ops", "ask"], ["Mark unverified", "noop"]] },
+    { id: "s3", k: "missing reason", t: "Two arguments have no reason yet. I can draft one from ADR-0016 for review.", acts: [["Draft reasons", "draft"]] },
+    { id: "s4", k: "missing person", t: "@lena-fe has not picked. Frontend is affected through realtime push (ADR-0012).", acts: [["Nudge", "nudge"]] },
+    { id: "s5", k: "summary", t: "C leads on ops load and managed offer. A leads on replay. The split is about how much replay v1 needs.", acts: [["Pin to top", "noop"]] },
+  ];
+  const feed = [["mehdi-ops", "answered: “No” to running 3 brokers", "1h"], ["advisor", "verified #3 against ADR-0007", "1h"], ["reza-data", "picked C (needs 14 days replay)", "5h"], ["sara-dev", "added pro #2 to A", "2d"], ["architect", "drafted options A, B, C", "3d"]];
+  document.getElementById("drawer").innerHTML = `<section class="pn"><div class="pn-head" style="border-color:var(--agent)"><span class="pn-id" style="background:var(--agent)">AI</span><h3>Agent · @advisor</h3><span class="pn-meta">${sugs.length} suggestions</span></div><div class="pn-body flush">${sugs.map((s) => `<div class="sug ${s.done || S.done.has(s.id) ? "done" : ""}"><div class="k">${s.k}</div>${linkify(s.t)}<div class="acts">${s.acts.map(([l, a]) => `<button class="btn btn--sm ${a === "noop" ? "btn--ghost" : "btn--agent"}" data-act="${a}" data-sug="${s.id}">${l}</button>`).join("")}</div></div>`).join("")}
+  <div style="padding:10px 12px;border-top:1px solid var(--line-2);display:flex;gap:6px"><input class="input" placeholder="Ask the agent… e.g. “does C keep order?”" id="ask" style="font-size:12.5px;padding:6px 8px"><button class="btn btn--sm btn--agent" data-act="askq">Ask</button></div></div></section>
+  <section class="pn"><div class="pn-head"><span class="pn-id">⟳</span><h3>Activity</h3></div><div class="pn-body flush feed">${feed.map(([h, t, w]) => `<div>${av(h, "sm")}<span><b class="mono" style="font-size:12px">@${h}</b> ${esc(t)}</span><time>${w}</time></div>`).join("")}</div></section>`;
+}
+
+function render() {
+  header();
+  steps();
+  const st = document.getElementById("stage");
+  st.innerHTML = S.stage <= 2 ? boardStage() : S.stage === 3 ? weighStage() : S.stage === 4 ? decideStage() : recordStage();
+  drawer();
+}
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-stage],[data-plus],[data-form],[data-save],[data-act],[data-score],[data-w],[data-choose]");
+  if (!t) return;
+  e.preventDefault();
+  if (t.dataset.stage) { S.stage = +t.dataset.stage; return render(); }
+  if (t.dataset.plus) { const id = +t.dataset.plus; S.plusOn.has(id) ? S.plusOn.delete(id) : S.plusOn.add(id); return render(); }
+  if (t.dataset.form) { const k = t.dataset.form; S.forms[k] = !S.forms[k]; render(); document.getElementById(`t-${k}`)?.focus(); return; }
+  if (t.dataset.save) {
+    const k = t.dataset.save, [opt, kind] = k.split("-");
+    const text = document.getElementById(`t-${k}`).value.trim(), why = document.getElementById(`w-${k}`).value.trim();
+    if (!text) return toast("One line first");
+    S.extra.push({ id: 20 + S.extra.length, opt, kind, by: S.viewer, text, why, plus: [], flag: why ? null : { kind: "warn", text: "@advisor: needs a reason" } });
+    S.forms[k] = false;
+    toast(why ? "Added. @advisor checked it for duplicates: none" : "Added without a reason — @advisor flagged it");
+    return render();
+  }
+  if (t.dataset.score) { const [i, j, n] = t.dataset.score.split(":").map(Number); S.mineScores[i][j] = n; return render(); }
+  if (t.dataset.w) { const [i, n] = t.dataset.w.split(":").map(Number); S.weights[i] = n; return render(); }
+  if (t.dataset.choose) { S.choice = t.dataset.choose; return render(); }
+  const a = t.dataset.act;
+  if (t.dataset.sug && a !== "noop") S.done.add(t.dataset.sug);
+  if (a === "unmerge") { S.merged = !S.merged; toast(S.merged ? "Merged again" : "Duplicate restored"); return render(); }
+  if (a === "ask") { S.asks.add("q2"); toast("Ask sent to @mehdi-ops — appears in his inbox with context"); return render(); }
+  if (a === "draft") { toast("@advisor drafted 2 reasons — authors approve them before they show"); return render(); }
+  if (a === "nudge") { toast("Reminder sent to @lena-fe"); return render(); }
+  if (a === "addopt") return toast("New option: name + one line. @architect can draft pros/cons from the code");
+  if (a === "askq") { const q = document.getElementById("ask").value || "does C keep order?"; toast(`@advisor: “${q}” → Yes. Ingest claims rows by conversation_id with SKIP LOCKED (ADR-0016).`); return; }
+  if (a === "pick") return toast("Pick saved · the decider sees it with your reason");
+  if (a === "decide") { S.stage = 5; toast(`Decided ${S.choice}. @advisor is writing the ADR`); return render(); }
+  if (a === "md") return document.getElementById("mdv").classList.toggle("hidden");
+  if (a === "record") {
+    const box = document.getElementById("cl");
+    const rows = [...box.children];
+    rows.forEach((r, i) => setTimeout(() => { r.className = "check ok"; r.querySelector("i").textContent = "✓"; if (i === rows.length - 1) { S.recorded = true; render(); toast("ADR-0020 accepted"); } }, 350 * (i + 1)));
+    return;
+  }
+  if (a === "noop") return toast("Done");
+});
+render();
+</script>
+</body>
+</html>

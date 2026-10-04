@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A · Decision as a pull request</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+.wrap { max-width: 1320px; margin: 0 auto; padding: 22px 20px 80px; }
+.hd h1 { margin: 6px 0 6px; font-size: 26px; letter-spacing: -0.015em; line-height: 1.2; }
+.hd h1 .mono { color: var(--ink-3); font-weight: 500; }
+.hd-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; color: var(--ink-2); font-size: 13px; }
+.branch { font: 12px var(--mono); background: var(--accent-bg); color: var(--accent); padding: 2px 6px; }
+.tabs { display: flex; gap: 0; border-bottom: 1.5px solid var(--line); margin: 18px 0 18px; overflow-x: auto; }
+.tab { padding: 10px 14px; border: 0; background: none; cursor: pointer; font-size: 13.5px; color: var(--ink-2); border-bottom: 3px solid transparent; margin-bottom: -1.5px; white-space: nowrap; }
+.tab b { font: 600 11px var(--mono); background: var(--fill); border: 1px solid var(--line-2); padding: 0 5px; margin-left: 4px; }
+.tab.on { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; align-items: start; }
+@media (max-width: 980px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+
+.tl { position: relative; }
+.tl::before { content: ""; position: absolute; left: 16px; top: 0; bottom: 0; border-left: 2px solid var(--line-2); }
+.ev { position: relative; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 14px; margin-bottom: 18px; }
+.ev > .av { position: relative; z-index: 1; box-shadow: 0 0 0 4px var(--bg); }
+.ev-small { display: flex; align-items: center; gap: 8px; margin: -4px 0 18px 6px; position: relative; font-size: 13px; color: var(--ink-2); }
+.ev-small .dot { width: 22px; height: 22px; display: grid; place-items: center; background: var(--paper); border: 1.5px solid var(--line-2); font-size: 11px; z-index: 1; flex: none; }
+.ev-small .dot--agent { border-color: var(--agent); color: var(--agent); }
+.box { background: var(--paper); border: 1.5px solid var(--line); }
+.box-h { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line-2); background: var(--fill); font-size: 13px; }
+.box-h .when { color: var(--ink-3); font-size: 12px; }
+.box-h .r { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.box-b { padding: 12px 14px; }
+.box-b p { margin: 0 0 8px; }
+.box-b p:last-child { margin-bottom: 0; }
+.box.agent-card { border-color: var(--agent); }
+.box.agent-card .box-h { background: var(--agent-bg); }
+.box.review-c { border-color: var(--green); }
+.hero-q { border: 2px solid var(--warn); background: var(--warn-bg); padding: 12px 14px; }
+.hero-q small { font: 700 10.5px var(--mono); letter-spacing: 0.08em; color: #fff; background: var(--warn); padding: 3px 7px; }
+.hero-q div { margin-top: 8px; font-size: 17px; font-weight: 600; line-height: 1.45; }
+.optrow { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line-2); }
+.optrow:last-child { border-bottom: 0; }
+.optrow small { display: block; color: var(--ink-2); font-size: 12px; }
+.suggest { border: 1px solid var(--line-2); margin-top: 8px; }
+.suggest-h { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: var(--fill); border-bottom: 1px solid var(--line-2); font: 12px var(--mono); color: var(--ink-2); }
+.suggest pre { margin: 0; padding: 8px 10px; font: 12px/1.6 var(--mono); white-space: pre-wrap; }
+.suggest .add { background: #e6f4ea; color: var(--green); display: block; }
+.pick { display: inline-flex; align-items: center; gap: 6px; font: 600 11px var(--mono); padding: 3px 8px; border: 1.5px solid; }
+.pick--A { color: var(--accent); background: var(--accent-bg); }
+.pick--B { color: #b4307a; background: #fbe9f3; }
+.pick--C { color: var(--green); background: var(--green-bg); }
+.claims { list-style: none; margin: 6px 0 0; padding: 0; }
+.claims li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; font-size: 13px; }
+.claims i { font-style: normal; font-weight: 700; width: 16px; }
+.cons-bar { display: flex; height: 26px; border: 1.5px solid var(--line); margin: 8px 0 6px; }
+.cons-bar span { display: flex; align-items: center; justify-content: center; gap: 4px; font: 600 11px var(--mono); color: #fff; }
+.composer { background: var(--paper); border: 1.5px solid var(--line); }
+.composer .row { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-top: 1px solid var(--line-2); flex-wrap: wrap; }
+.composer textarea { border: 0; min-height: 80px; padding: 12px; }
+.seg { display: inline-flex; border: 1.5px solid var(--line-2); }
+.seg button { border: 0; background: var(--paper); padding: 4px 9px; font-size: 12px; cursor: pointer; border-right: 1px solid var(--line-2); }
+.seg button:last-child { border-right: 0; }
+.seg button.on { background: var(--ink); color: #fff; }
+.decide { border: 2px solid var(--ink); background: var(--paper); }
+.decide-h { background: var(--ink); color: #fff; padding: 8px 12px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+.ch-opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 700px) { .ch-opts { grid-template-columns: minmax(0, 1fr); } }
+.ch-opt { border: 1.5px solid var(--line-2); padding: 10px; cursor: pointer; background: var(--paper); text-align: left; }
+.ch-opt.on { border: 2.5px solid var(--green); background: var(--green-bg); }
+.ch-opt small { display: block; font: 11px var(--mono); color: var(--ink-2); margin-top: 4px; }
+.merged { border: 2px solid var(--green); background: var(--green-bg); padding: 14px 16px; display: flex; gap: 14px; align-items: center; }
+.merged b.big { font-size: 22px; color: var(--green); }
+
+.side .pn + .pn { margin-top: 16px; }
+.side .row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line-2); font-size: 13px; }
+.side .row:last-child { border-bottom: 0; }
+.side .row .r { margin-left: auto; }
+.optsum { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 0; font-size: 13px; }
+.mini { font: 11px var(--mono); color: var(--ink-2); }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 900px) { .grid3 { grid-template-columns: minmax(0, 1fr); } }
+.grid3 .col { display: flex; flex-direction: column; gap: 8px; }
+.col-h { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border: 1.5px solid var(--line); background: var(--paper); font-weight: 600; }
+.lbl { font: 10.5px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<header class="pt-top">
+  <a class="pt-brand" href="index.html"><i>ADR</i></a>
+  <div class="pt-crumbs"><span>abtinokhovat/x</span>/<span>decisions</span>/<b>#42</b></div>
+  <span class="pt-proto">Prototype A · PR thread</span>
+  <label class="mini">View as <select class="select" id="viewer" style="width:auto;padding:4px 6px;display:inline-block"></select></label>
+</header>
+
+<main class="wrap">
+  <div class="hd">
+    <div class="hd-meta"><span id="state"></span><span class="mono dim">#42</span></div>
+    <h1><span class="mono">ADR-0020</span> Message broker for v1</h1>
+  </div>
+  <div id="hdmeta" class="hd-meta"></div>
+  <nav class="tabs" id="tabs"></nav>
+  <div class="cols">
+    <section id="main"></section>
+    <aside class="side" id="side"></aside>
+  </div>
+</main>
+
+<script src="data.js"></script>
+<script>
+const { esc, av, who, ref, linkify, toast } = H;
+const ST = STORY;
+const S = { viewer: "abtinokhovat", tab: "conv", applied: false, asked: ["mehdi-ops", "reza-data"], posts: [], merged: false, choice: "C", plusOn: new Set(), merging: false };
+const PICKC = (o) => `<span class="pick pick--${o}">prefers ${o}</span>`;
+
+document.getElementById("viewer").innerHTML = Object.entries(ST.people).filter(([, p]) => !p.agent).map(([h, p]) => `<option value="${h}">@${h} — ${p.role}</option>`).join("");
+document.getElementById("viewer").onchange = (e) => { S.viewer = e.target.value; render(); };
+
+function stateHtml() {
+  if (S.merged) return `<span class="pill pill--accepted">Accepted · merged</span>`;
+  return `<span class="pill pill--review">In review</span>`;
+}
+
+function timeline() {
+  const ev = [];
+  ev.push(`<div class="ev">${av("abtinokhovat", "lg")}<div class="box"><div class="box-h">${who("abtinokhovat")} <span class="muted">opened this decision</span><span class="when">3 days ago</span><span class="r"><span class="chip">decider</span></span></div>
+  <div class="box-b"><div class="hero-q"><small>DECISION TO MAKE</small><div>${esc(ST.adr.question)}</div></div>
+  <p style="margin-top:10px">${linkify(ST.adr.why)}</p>
+  <div class="chips">${ST.adr.related.map((r) => `<span class="chip">${esc(r.rel)}</span>${ref(r.id)}`).join(" ")}</div></div></div></div>`);
+
+  ev.push(`<div class="ev">${av("architect", "lg")}<div class="box agent-card"><div class="box-h">${who("architect")} <span class="muted">drafted 3 options from the codebase</span><span class="when">3 days ago</span><span class="r"><span class="mini">read: ADR-0004, 0007, 0016, 0019 · go.mod · deploy/</span></span></div>
+  <div class="box-b">${ST.options.map((o) => `<div class="optrow"><span class="opt-key">${o.key}</span><div><b>${esc(o.name)}</b><small>${esc(o.sub)}</small></div><span class="mini">proposed by @${o.by}</span></div>`).join("")}
+  <p class="mini" style="margin-top:8px">Committed <span class="branch">docs/adr/0020-message-broker-for-v1.md</span> (+54) on <span class="branch">${ST.branch}</span></p></div></div></div>`);
+
+  ev.push(`<div class="ev">${av("sara-dev", "lg")}<div class="box"><div class="box-h">${who("sara-dev")} <span class="muted">suggested an argument on option A</span><span class="when">2 days ago</span><span class="r">${PICKC("A")}</span></div>
+  <div class="box-b"><p>Replay matters more than it looks: CDP rebuilds will need it. Adding it as a pro so it gets weighed.</p>
+  <div class="suggest"><div class="suggest-h"><span>Suggested change · Options › A — Redpanda › Pros</span>${S.applied ? `<span class="flag flag--ok">applied by @abtinokhovat</span>` : `<button class="btn btn--sm" data-act="apply">Apply suggestion</button>`}</div>
+  <pre><span class="add">+ Replay for CDP backfills — 7-day retention covers a bad deploy.</span></pre></div></div></div></div>`);
+
+  ev.push(`<div class="ev-small"><span class="dot">→</span>${who("abtinokhovat")} requested input from ${S.asked.map((h) => `${av(h, "sm")} ${who(h)}`).join(", ")} <span class="dim">2 days ago</span></div>`);
+
+  ev.push(`<div class="ev">${av("mehdi-ops", "lg")}<div class="box review-c"><div class="box-h">${who("mehdi-ops")} <span class="muted">reviewed</span><span class="when">yesterday</span><span class="r">${PICKC("C")}<span class="mini">confidence 90%</span></span></div>
+  <div class="box-b"><p>We cannot run 3 brokers safely with one person on call. Upgrades, disk and lag alerts are on us.</p>
+  <div class="arg arg--con"><div class="arg-top">con · option A</div>We would run 3 brokers ourselves<div class="arg-why">No managed Kafka/Redpanda on Hamravesh or ArvanCloud (checked 2026-10-03).</div><div class="arg-foot"><span class="flag flag--ok">✓ verified against ADR-0007</span></div></div></div></div></div>`);
+
+  ev.push(`<div class="ev">${av("advisor", "lg")}<div class="box agent-card"><div class="box-h">${who("advisor")} <span class="muted">checked claims and tidied arguments</span><span class="when">yesterday</span></div>
+  <div class="box-b"><ul class="claims">
+    <li><i style="color:var(--green)">✓</i><span>“No managed Kafka on our host” — matches ADR-0007 (checked 2026-10-03).</span></li>
+    <li><i style="color:var(--warn)">?</i><span>“NATS on Darkube is managed” — unverified. Asked ${who("mehdi-ops")} <a href="#" data-act="noop">view ask</a>.</span></li>
+    <li><i style="color:var(--agent)">⇄</i><span>Merged @lena-fe’s con “another cluster to watch” into #3 (same point). <a href="#" data-act="undo">Undo</a></span></li>
+    <li><i style="color:var(--agent)">+</i><span>Linked mitigation for “ingest depends on DB uptime”: relay spool in ${ref("0019")}.</span></li>
+  </ul></div></div></div>`);
+
+  ev.push(`<div class="ev">${av("reza-data", "lg")}<div class="box review-c"><div class="box-h">${who("reza-data")} <span class="muted">reviewed with a condition</span><span class="when">5 hours ago</span><span class="r">${PICKC("C")}<span class="mini">60%</span></span></div>
+  <div class="box-b"><p>C works <b>if raw rows are kept 14 days</b>. CDP profile rebuilds never go further back than that.</p></div></div></div>`);
+
+  ev.push(summaryCard());
+  for (const p of S.posts) ev.push(p);
+  if (S.merged) ev.push(mergedEvents());
+  return `<div class="tl">${ev.join("")}</div>`;
+}
+
+function summaryCard() {
+  const picks = Object.entries(ST.picks).filter(([, p]) => p);
+  const n = { A: 0, B: 0, C: 0 };
+  picks.forEach(([, p]) => n[p.opt]++);
+  const total = Object.keys(ST.picks).length;
+  const seg = (k, c) => n[k] ? `<span style="flex:${n[k]};background:${c}">${k} · ${n[k]}</span>` : "";
+  return `<div class="ev">${av("advisor", "lg")}<div class="box agent-card"><div class="box-h">${who("advisor")} <span class="muted">consensus check</span><span class="when">1 hour ago</span><span class="r"><span class="pill pill--agent">ready to decide</span></span></div>
+  <div class="box-b"><div class="cons-bar">${seg("C", "var(--green)")}${seg("A", "var(--accent)")}${seg("B", "#b4307a")}<span style="flex:${total - picks.length};background:var(--line-2);color:var(--ink-2)">pending · ${total - picks.length}</span></div>
+  <p><b>Leaning C (3 of 4)</b>. Weighted scores: ${H.totals().map((t, i) => `${ST.options[i].key} ${t}`).join(" · ")}.</p>
+  <p><b>Dissent:</b> ${who("sara-dev")} prefers A — “${esc(ST.picks["sara-dev"].why)}” → I will record it with a revisit trigger.</p>
+  <p><b>Open:</b> 1 ask to ${who("mehdi-ops")} (Darkube NATS). It does not change the lead.</p></div></div></div>`;
+}
+
+function mergedEvents() {
+  return `<div class="ev-small"><span class="dot" style="border-color:var(--green);color:var(--green)">✓</span>${who("abtinokhovat")} accepted option <b>${S.choice}</b> and merged <span class="branch">${ST.branch}</span> into <span class="branch">main</span></div>
+  <div class="ev">${av("advisor", "lg")}<div class="box agent-card"><div class="box-h">${who("advisor")} <span class="muted">cleaned up and recorded</span></div><div class="box-b">
+  <ul class="claims"><li><i style="color:var(--green)">✓</i>Rewrote arguments into the ADR in plain style; merged 1 duplicate.</li><li><i style="color:var(--green)">✓</i>Recorded dissent from @sara-dev with trigger “replay > 14 days”.</li><li><i style="color:var(--green)">✓</i>Set ${ref("0004")} to “Proposed — scale path”; linked from 0020.</li><li><i style="color:var(--green)">✓</i>Added follow-up issue #51 “raw table 14-day retention job”.</li><li><i style="color:var(--green)">✓</i><span class="mono">adr lint</span> passed.</li></ul></div></div></div>`;
+}
+
+function composer() {
+  if (S.merged) return "";
+  return `<div class="ev">${av(S.viewer, "lg")}<div><div class="composer">
+  <div class="row" style="border-top:0;border-bottom:1px solid var(--line-2)"><span class="seg" id="kind"><button class="on" data-k="comment">Comment</button><button data-k="pro">+ Pro</button><button data-k="con">− Con</button><button data-k="question">? Question</button></span>
+  <select class="select" id="onopt" style="width:auto;padding:4px 6px"><option value="">whole decision</option>${ST.options.map((o) => `<option value="${o.key}">option ${o.key}</option>`).join("")}</select></div>
+  <textarea class="textarea" id="text" placeholder="Add your reasoning. Mention @people or ADR-0007. Pros and cons need a reason."></textarea>
+  <div class="row"><span class="mini">Markdown · @mention · ADR-####</span><span style="margin-left:auto;display:flex;gap:8px"><button class="btn btn--agent" data-act="askagent">Ask @advisor</button><button class="btn" data-act="request">Request input…</button><button class="btn btn--primary" data-act="post">Comment</button></span></div></div></div></div>`;
+}
+
+function decideBox() {
+  if (S.merged) return `<div class="merged"><b class="big">✓</b><div><b>ADR-0020 accepted.</b> Option ${S.choice} — PostgreSQL only. Merged into main; the ADR page and architecture map updated.<div class="mini" style="margin-top:4px">docs/adr/0020-message-broker-for-v1.md · status: Accepted · 4 consulted · 1 dissent recorded</div></div></div>`;
+  if (S.viewer !== "abtinokhovat") return `<div class="box"><div class="box-b muted">Only the decider (${who("abtinokhovat")}) can finalize. You can still add a pro, con or question above.</div></div>`;
+  return `<div class="decide"><div class="decide-h"><span>Finalize decision</span><span class="mini" style="color:#cfd5de">you are the decider</span></div><div class="box-b">
+  <div class="ch-opts">${ST.options.map((o, i) => `<button class="ch-opt ${S.choice === o.key ? "on" : ""}" data-choose="${o.key}"><b>${o.key} — ${esc(o.name)}</b><small>score ${H.totals()[i]} · ${Object.values(ST.picks).filter((p) => p?.opt === o.key).length} picks</small></button>`).join("")}</div>
+  <div class="lbl" style="margin-top:12px">Reason (goes into the Decision callout)</div>
+  <textarea class="textarea" id="reason">Smallest ops load for v1; ADR-0004 stays the scale path. Keep raw rows 14 days.</textarea>
+  <label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:13px"><input type="checkbox" checked> Record dissent from @sara-dev with a revisit trigger</label>
+  <div id="cleanup" style="margin-top:10px"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" data-tab="files">Preview ADR</button><button class="btn btn--green" data-act="merge" ${S.merging ? "disabled" : ""}>Accept &amp; merge</button></div></div></div>`;
+}
+
+function argsTab() {
+  return `<div class="grid3">${ST.options.map((o) => {
+    const list = ST.args.filter((a) => a.opt === o.key && !(a.flag?.kind === "dup"));
+    const card = (a) => `<div class="arg arg--${a.kind}"><div class="arg-top">${av(a.by, "sm")} @${a.by} · ${a.kind}</div>${esc(a.text)}${a.why ? `<div class="arg-why">${linkify(a.why)}</div>` : ""}<div class="arg-foot"><button class="plus ${S.plusOn.has(a.id) ? "on" : ""}" data-plus="${a.id}">+${a.plus.length + (S.plusOn.has(a.id) ? 1 : 0)}</button>${a.flag ? `<span class="flag ${a.flag.kind === "warn" ? "flag--warn" : a.flag.kind === "ok" ? "flag--ok" : ""}">${esc(a.flag.text)}</span>` : ""}</div></div>`;
+    return `<div class="col"><div class="col-h"><span class="opt-key">${o.key}</span>${esc(o.name)}</div><div class="lbl">Pros</div>${list.filter((a) => a.kind === "pro").map(card).join("")}<div class="lbl">Cons</div>${list.filter((a) => a.kind === "con").map(card).join("")}</div>`;
+  }).join("")}</div>`;
+}
+
+function filesTab() {
+  const md = H.finalMd(S.choice).split("\n").map((l) => `<span class="add">+ ${esc(l)}</span>`).join("");
+  return `<div class="pn"><div class="pn-head"><span class="pn-id">+</span><h3 class="mono" style="font-size:13px">docs/adr/0020-message-broker-for-v1.md</h3><span class="pn-meta">${S.merged ? "merged" : "draft written by @advisor from the thread"}</span></div><div class="pn-body"><div class="md-preview">${md}</div></div></div>`;
+}
+
+function checksTab() {
+  const rows = [["ok", "adr lint", "0 errors · frontmatter, links, components"], ["ok", "claims", "3 verified"], ["wait", "claims", "1 unverified: Darkube NATS managed?"], ["ok", "duplicates", "1 merged by @advisor"], [S.merged ? "ok" : "wait", "decision", S.merged ? "accepted by @abtinokhovat" : "waiting for decider"]];
+  return `<div class="pn"><div class="pn-head"><span class="pn-id">✓</span><h3>Checks</h3></div><div class="pn-body">${rows.map(([k, a, b]) => `<div class="check ${k}"><i>${k === "ok" ? "✓" : "·"}</i><b>${a}</b><span class="muted">${b}</span></div>`).join("")}</div></div>`;
+}
+
+function side() {
+  const reviewers = ["sara-dev", "mehdi-ops", "reza-data", "lena-fe"];
+  const optCounts = ST.options.map((o) => ({ o, pro: ST.args.filter((a) => a.opt === o.key && a.kind === "pro").length, con: ST.args.filter((a) => a.opt === o.key && a.kind === "con" && a.flag?.kind !== "dup").length, picks: Object.values(ST.picks).filter((p) => p?.opt === o.key).length }));
+  return `<section class="pn"><div class="pn-head"><span class="pn-id">D</span><h3>Decider</h3></div><div class="pn-body"><div class="row" style="border:0">${av("abtinokhovat")} ${who("abtinokhovat")}<span class="r mini">due ${ST.adr.due}</span></div></div></section>
+  <section class="pn"><div class="pn-head"><span class="pn-id">R</span><h3>Reviewers</h3><span class="pn-meta">3 of 4</span></div><div class="pn-body">${reviewers.map((h) => { const p = ST.picks[h]; return `<div class="row">${av(h, "sm")} ${who(h)}<span class="r">${p ? `<span class="pick pick--${p.opt}">${p.opt} · ${Math.round(p.conf * 100)}%</span>` : `<span class="mini">not yet</span> <button class="btn btn--sm" data-act="nudge" data-h="${h}">Nudge</button>`}</span></div>`; }).join("")}</div></section>
+  <section class="pn"><div class="pn-head"><span class="pn-id">O</span><h3>Options</h3></div><div class="pn-body">${optCounts.map(({ o, pro, con, picks }) => `<div class="optsum ${S.merged && S.choice === o.key ? "is-chosen" : ""}"><span class="opt-key">${o.key}</span><span>${esc(o.name)}<br><span class="mini"><span style="color:var(--green)">+${pro}</span> <span style="color:var(--err)">−${con}</span> · ${picks} picks</span></span><span class="mono" style="font-weight:700">${H.totals()[ST.options.indexOf(o)]}</span></div>`).join("")}</div></section>
+  <section class="pn"><div class="pn-head"><span class="pn-id">#</span><h3>Labels &amp; links</h3></div><div class="pn-body"><div class="chips">${ST.adr.tags.map((t) => `<span class="chip chip--tag">${t}</span>`).join("")}</div><div class="sep"></div>${ST.adr.related.map((r) => `<div class="row">${ref(r.id)}<span class="mini">${esc(r.rel)}</span></div>`).join("")}</div></section>`;
+}
+
+function render() {
+  document.getElementById("state").innerHTML = stateHtml();
+  document.getElementById("hdmeta").innerHTML = `${av("abtinokhovat", "sm")} ${who("abtinokhovat")} wants a decision on <span class="branch">${ST.branch}</span> → <span class="branch">main</span> · due ${ST.adr.due} · ${ST.adr.components.map((c) => `<span class="chip">◇ ${esc(c)}</span>`).join("")}`;
+  const tabs = [["conv", "Conversation", 9 + S.posts.length], ["args", "Options & arguments", ST.args.length], ["files", "Files changed", 1], ["checks", "Checks", 5]];
+  document.getElementById("tabs").innerHTML = tabs.map(([k, l, n]) => `<button class="tab ${S.tab === k ? "on" : ""}" data-tab="${k}">${l}<b>${n}</b></button>`).join("");
+  const main = document.getElementById("main");
+  main.innerHTML = S.tab === "conv" ? timeline() + composer() + `<div style="margin-left:48px">${decideBox()}</div>` : S.tab === "args" ? argsTab() : S.tab === "files" ? filesTab() : checksTab();
+  document.getElementById("side").innerHTML = side();
+}
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-act],[data-tab],[data-choose],[data-plus],#kind button");
+  if (!t) return;
+  e.preventDefault();
+  if (t.dataset.tab) { S.tab = t.dataset.tab; return render(); }
+  if (t.dataset.choose) { S.choice = t.dataset.choose; return render(); }
+  if (t.dataset.plus) { const id = +t.dataset.plus; S.plusOn.has(id) ? S.plusOn.delete(id) : S.plusOn.add(id); return render(); }
+  if (t.closest("#kind")) { document.querySelectorAll("#kind button").forEach((b) => b.classList.toggle("on", b === t)); return; }
+  const act = t.dataset.act;
+  if (act === "apply") { S.applied = true; toast("Suggestion committed to adr/0020-broker-v1"); return render(); }
+  if (act === "undo") return toast("Undo: @lena-fe’s con restored as a separate card");
+  if (act === "nudge") return toast(`Reminder sent to @${t.dataset.h} (Slack + GitHub)`);
+  if (act === "request") return toast("Pick people to ask: @lena-fe, @reza-data … (they get a focused ask)");
+  if (act === "askagent") {
+    S.posts.push(`<div class="ev">${av("advisor", "lg")}<div class="box agent-card"><div class="box-h">${who("advisor")} <span class="muted">answered</span><span class="when">just now</span></div><div class="box-b"><p>Order per conversation in C: the ingest worker claims rows with <span class="mono">SKIP LOCKED</span> grouped by <span class="mono">conversation_id</span>, so order holds (ADR-0016, “Ordering”). No new risk found.</p></div></div></div>`);
+    toast("@advisor read ADR-0016 and replied");
+    return render();
+  }
+  if (act === "post") {
+    const text = document.getElementById("text").value.trim();
+    if (!text) return toast("Write something first");
+    const kind = document.querySelector("#kind .on").dataset.k;
+    const opt = document.getElementById("onopt").value;
+    const card = kind === "comment" ? `<p>${linkify(text)}</p>` : `<div class="arg arg--${kind === "question" ? "q" : kind}"><div class="arg-top">${kind}${opt ? ` · option ${opt}` : ""}</div>${linkify(text)}${kind !== "question" ? `<div class="arg-foot"><span class="flag">@advisor: add a reason so it can be weighed</span></div>` : ""}</div>`;
+    S.posts.push(`<div class="ev">${av(S.viewer, "lg")}<div class="box"><div class="box-h">${who(S.viewer)} <span class="muted">${kind === "comment" ? "commented" : `added a ${kind}`}</span><span class="when">just now</span></div><div class="box-b">${card}</div></div></div>`);
+    return render();
+  }
+  if (act === "merge") {
+    S.merging = true;
+    render();
+    const steps = ["Write ADR from thread (plain style, STE)", "Merge duplicate arguments", "Record dissent + revisit trigger", "Update ADR-0004 and architecture.yaml", "Run adr lint", "Merge into main"];
+    let i = 0;
+    const tick = () => {
+      document.getElementById("cleanup").innerHTML = `<div class="agent-card" style="padding:14px 12px 6px;margin-top:6px">${steps.map((s, j) => `<div class="check ${j < i ? "ok" : j === i ? "run" : "wait"}"><i>${j < i ? "✓" : j === i ? "◌" : "·"}</i>${s}</div>`).join("")}</div>`;
+      if (i++ < steps.length) setTimeout(tick, 420);
+      else { S.merged = true; S.merging = false; render(); toast("ADR-0020 accepted and merged"); }
+    };
+    tick();
+  }
+});
+render();
+</script>
+</body>
+</html>

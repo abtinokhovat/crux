@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team decision flow · prototypes</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+.wrap { max-width: 1240px; margin: 0 auto; padding: 28px 20px 80px; }
+h1 { margin: 0 0 6px; font-size: 28px; letter-spacing: -0.015em; }
+.lead { color: var(--ink-2); max-width: 80ch; margin: 0 0 22px; }
+.flow { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1.5px solid var(--line); background: var(--paper); }
+@media (max-width: 1000px) { .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.fs { padding: 12px 12px 14px; border-right: 1px solid var(--line-2); position: relative; }
+.fs:last-child { border-right: 0; }
+.fs b { display: grid; place-items: center; width: 24px; height: 24px; background: var(--ink); color: #fff; font: 700 11px var(--mono); margin-bottom: 8px; }
+.fs h3 { margin: 0 0 6px; font-size: 14px; }
+.fs .h, .fs .a { font-size: 12px; line-height: 1.45; padding: 4px 6px; margin-top: 4px; }
+.fs .h { background: var(--fill); border-left: 3px solid var(--ink); }
+.fs .a { background: var(--agent-bg); border-left: 3px solid var(--agent); color: #3e2a75; }
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 22px; }
+@media (max-width: 1000px) { .cards { grid-template-columns: minmax(0, 1fr); } }
+.card { display: flex; flex-direction: column; }
+.card .pn-body { display: grid; gap: 10px; font-size: 13.5px; flex: 1; }
+.card ul { margin: 0; padding-left: 18px; }
+.card .k { font: 600 10.5px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+.card .go { margin-top: auto; }
+.cmp { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--paper); border: 1.5px solid var(--line); margin-top: 22px; }
+.cmp th, .cmp td { padding: 9px 12px; border-bottom: 1px solid var(--line-2); text-align: left; vertical-align: top; }
+.cmp th { font: 11px var(--mono); color: var(--ink-2); font-weight: 400; }
+.cmp td:first-child { font-weight: 600; }
+.y { color: var(--green); font-weight: 700; } .m { color: var(--warn); font-weight: 700; } .n { color: var(--err); font-weight: 700; }
+.rec { margin-top: 22px; border: 2px solid var(--green); background: var(--green-bg); padding: 16px 18px; }
+.rec small { font: 700 10.5px var(--mono); letter-spacing: 0.08em; color: #fff; background: var(--green); padding: 3px 7px; }
+.rec p { margin: 10px 0 0; font-size: 15px; }
+</style>
+</head>
+<body>
+<header class="pt-top"><a class="pt-brand" href="index.html"><i>ADR</i> adr-kit</a><div class="pt-crumbs"><span>prototypes</span>/<b>team decision flow</b></div><span class="pt-proto">3 directions · same story</span></header>
+<main class="wrap">
+  <h1>Deciding together, with agents in the loop</h1>
+  <p class="lead">One real story in all three: the <span class="mono">abtinokhovat/x</span> team picks the v1 message broker (ADR-0020). The same people, git handles, options, arguments and agents appear in each prototype. Click through and compare the flow, not the colors.</p>
+
+  <div class="flow">
+    <div class="fs"><b>1</b><h3>Propose</h3><div class="h">Anyone asks a question with a decider and a due date.</div><div class="a">Finds related ADRs and code.</div></div>
+    <div class="fs"><b>2</b><h3>Draft</h3><div class="h">The decider reviews the draft before the team sees it.</div><div class="a">@architect drafts options with pros and cons.</div></div>
+    <div class="fs"><b>3</b><h3>Argue</h3><div class="h">Team adds pros/cons — each with a reason — and +1s.</div><div class="a">Merges duplicates, verifies claims, links ADRs.</div></div>
+    <div class="fs"><b>4</b><h3>Ask</h3><div class="h">The decider asks specific people specific questions.</div><div class="a">Writes the TL;DR and answer choices for each ask.</div></div>
+    <div class="fs"><b>5</b><h3>Weigh</h3><div class="h">People pick, score criteria and give confidence.</div><div class="a">Summarizes consensus and dissent, with sources.</div></div>
+    <div class="fs"><b>6</b><h3>Decide</h3><div class="h">One decider accepts an option and edits the text.</div><div class="a">Records dissent and a revisit trigger.</div></div>
+    <div class="fs"><b>7</b><h3>Record</h3><div class="h">Merge.</div><div class="a">Writes the ADR, updates links and the map, runs lint, opens the PR.</div></div>
+  </div>
+
+  <section class="pn" style="margin-top:22px;border-color:var(--green)"><div class="pn-head" style="border-color:var(--green)"><span class="pn-id" style="background:var(--green)">A2</span><h3>Your flow: question → your Claude → team review → you finalize → agents use it</h3><span class="pn-meta">chosen direction · builds on A</span></div><div class="pn-body" style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;font-size:13.5px">
+    <div><b>The agent is personal, not a team member.</b> You capture a question (even mid-meeting, with teammates adding notes through a link). Your own Claude Code enriches the markdown locally: options, scenarios, links to other ADRs. The app only visualizes it. You shape it, share it as a PR, answer reviews, and finalize. Later, every agent reads the decisions — what was chosen, what was rejected and why, and when to reopen — before it changes code.</div>
+    <a class="btn btn--green" href="a2-personal-flow.html">Open A2 →</a></div></section>
+
+  <div class="cards">
+    <section class="pn card"><div class="pn-head"><span class="pn-id">A</span><h3>Decision as a pull request</h3></div><div class="pn-body">
+      <div><span class="k">Idea</span><br>Every ADR is a branch and a PR. A timeline of reviews, suggested changes to arguments, agent check comments, and a “Finalize” box that merges.</div>
+      <div><span class="k">Best for</span><ul><li>Engineering teams already living in GitHub</li><li>A full audit trail in git</li></ul></div>
+      <div><span class="k">Trade-off</span><ul><li>Long threads; the structure is in the sidebar, not the body</li><li>Non-engineers find PRs heavy</li></ul></div>
+      <a class="btn btn--primary go" href="a-pull-request.html">Open prototype A →</a></div></section>
+    <section class="pn card"><div class="pn-head"><span class="pn-id">B</span><h3>Decision canvas</h3></div><div class="pn-body">
+      <div><span class="k">Idea</span><br>A board: one column per option, pro/con cards with reasons and +1s, a live weighting matrix, picks and a record step. The agent sits in a side panel.</div>
+      <div><span class="k">Best for</span><ul><li>Live workshops and design reviews</li><li>Seeing the whole trade-off at once</li></ul></div>
+      <div><span class="k">Trade-off</span><ul><li>Needs people to come to the board</li><li>Dense on small screens</li></ul></div>
+      <a class="btn btn--primary go" href="b-canvas.html">Open prototype B →</a></div></section>
+    <section class="pn card"><div class="pn-head"><span class="pn-id">C</span><h3>Asks inbox + decision room</h3></div><div class="pn-body">
+      <div><span class="k">Idea</span><br>Contributors never read the thread: they get focused asks with a TL;DR and answer choices. The decider gets a room with readiness, who-thinks-what, consensus and an agent brief. The agent has its own approval queue.</div>
+      <div><span class="k">Best for</span><ul><li>Busy, async teams</li><li>Getting input from people outside the core group</li></ul></div>
+      <div><span class="k">Trade-off</span><ul><li>The full picture lives with the decider</li><li>Ask quality depends on the agent’s TL;DR</li></ul></div>
+      <a class="btn btn--primary go" href="c-inbox.html">Open prototype C →</a></div></section>
+  </div>
+
+  <table class="cmp">
+    <thead><tr><th></th><th>A · PR thread</th><th>B · Canvas</th><th>C · Inbox + room</th></tr></thead>
+    <tbody>
+      <tr><td>Effort for a contributor</td><td class="m">medium — read the thread</td><td class="m">medium — open the board</td><td class="y">low — answer 1 card</td></tr>
+      <tr><td>See all trade-offs at once</td><td class="n">no, scattered</td><td class="y">yes</td><td class="m">decider only</td></tr>
+      <tr><td>Git-native record</td><td class="y">yes, it is the PR</td><td class="m">PR at the end</td><td class="m">PR at the end</td></tr>
+      <tr><td>Agent visibility</td><td class="y">comments in the timeline</td><td class="y">side panel</td><td class="y">own queue with approvals</td></tr>
+      <tr><td>Captures dissent</td><td class="y">yes</td><td class="y">yes</td><td class="y">yes</td></tr>
+      <tr><td>Works for non-engineers</td><td class="n">weak</td><td class="y">good</td><td class="y">good</td></tr>
+      <tr><td>Build cost on top of adr-kit</td><td class="m">GitHub app + webhooks</td><td class="m">realtime board state</td><td class="m">notifications + asks</td></tr>
+    </tbody>
+  </table>
+
+  <div class="rec"><small>RECOMMENDATION</small><p><b>Combine them; don’t pick one.</b> Use <b>C’s asks</b> to collect input (lowest effort, best response rate). Use <b>B’s canvas</b> as the decision page the asks link to. Use <b>A’s PR</b> as the storage and audit layer: arguments and the final ADR are commits on <span class="mono">adr/NNNN-*</span>, so the repo stays the source of truth. Agents act only through attributed, reversible suggestions.</p></div>
+</main>
+</body>
+</html>

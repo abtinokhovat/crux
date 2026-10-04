@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A2 · Your question, your Claude, the team's review</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+:root { --local: #6b46c1; --local-bg: #efe9fb; }
+.wrap { max-width: 1360px; margin: 0 auto; padding: 18px 20px 80px; }
+.privacy { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px; font: 600 11.5px var(--mono); border: 1.5px solid; }
+.privacy--local { color: var(--local); background: var(--local-bg); }
+.privacy--notes { color: var(--warn); background: var(--warn-bg); }
+.privacy--shared { color: var(--accent); background: var(--accent-bg); }
+.privacy--done { color: var(--green); background: var(--green-bg); }
+.privacy i { font-style: normal; }
+.titlebar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 20px; margin: 4px 0 14px; }
+.titlebar h1 { margin: 0; font-size: 25px; letter-spacing: -0.015em; }
+.titlebar h1 .mono { color: var(--ink-3); font-weight: 500; }
+.step small { white-space: nowrap; }
+.step .who { margin-left: auto; font: 600 9.5px var(--mono); letter-spacing: 0.05em; padding: 2px 5px; border: 1px solid currentColor; }
+.who--me { color: var(--local); }
+.who--team { color: var(--accent); }
+.who--agents { color: var(--local); }
+.stage { margin-top: 16px; }
+.two { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.two-r { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; align-items: start; }
+@media (max-width: 1050px) { .two, .two-r { grid-template-columns: minmax(0, 1fr); } }
+.lbl { font: 600 10.5px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 6px; }
+.capture .input { font-size: 18px; font-weight: 600; padding: 10px 12px; border-color: var(--line); }
+.capture .textarea { min-height: 150px; font-size: 14px; line-height: 1.6; }
+.note { border: 1px solid var(--line-2); border-left: 4px solid var(--warn); background: var(--paper); padding: 8px 10px; font-size: 13.5px; }
+.note .top { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-3); margin-bottom: 3px; }
+.note .top time { margin-left: auto; font: 11px var(--mono); }
+.note .later { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+.note .later button { font: 11px var(--mono); padding: 2px 6px; border: 1px solid var(--line-2); background: var(--paper); cursor: pointer; }
+.note .later button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+.qr { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px; border: 1.5px dashed var(--warn); background: var(--warn-bg); font-size: 13px; }
+.qr svg { width: 80px; height: 80px; background: #fff; }
+.term { background: #121316; color: #d7dae0; font: 12.5px/1.6 var(--mono); border: 1.5px solid var(--line); min-height: 520px; }
+.term-h { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-bottom: 1px solid #2b2e35; color: #8b929e; font-size: 11.5px; }
+.term-h i { width: 10px; height: 10px; border-radius: 50%; background: #3a3d45; }
+.term-b { padding: 10px 12px; white-space: pre-wrap; }
+.term .p { color: #8fb6f5; } .term .c { color: #e6c07b; } .term .g { color: #8fd19e; } .term .d { color: #6f7480; } .term .w { color: #fff; font-weight: 600; }
+.term .cursor { display: inline-block; width: 7px; height: 14px; background: #d7dae0; vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.live { display: flex; align-items: center; gap: 8px; font: 11.5px var(--mono); color: var(--local); }
+.live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--local); box-shadow: 0 0 0 3px var(--local-bg); }
+.from-claude { position: relative; border: 1.5px dashed var(--local); background: linear-gradient(var(--local-bg), var(--local-bg)) padding-box; padding: 10px 12px; }
+.from-claude.kept { border-style: solid; border-color: var(--line-2); background: var(--paper); }
+.from-claude.dropped { opacity: 0.4; text-decoration: line-through; }
+.from-claude .tagline { display: flex; align-items: center; gap: 8px; font: 600 10.5px var(--mono); color: var(--local); margin-bottom: 6px; letter-spacing: 0.04em; }
+.from-claude .tagline .r { margin-left: auto; display: flex; gap: 4px; }
+.from-claude.kept .tagline { color: var(--ink-3); }
+.optcard { border: 1.5px solid var(--line-2); padding: 10px 12px; background: var(--paper); }
+.optcard h4 { margin: 0 0 4px; font-size: 14.5px; display: flex; gap: 8px; align-items: center; }
+.optcard .pc { font-size: 12.5px; }
+.optcard .pc div { display: flex; gap: 6px; }
+.optcard .pc .p::before { content: "+"; color: var(--green); font-weight: 700; width: 10px; }
+.optcard .pc .n::before { content: "−"; color: var(--err); font-weight: 700; width: 10px; }
+.optcard.lean { border: 2.5px solid var(--green); background: var(--green-bg); }
+.scen { width: 100%; border-collapse: collapse; font-size: 13px; }
+.scen th { font: 11px var(--mono); color: var(--ink-2); font-weight: 400; text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line-2); }
+.scen td { padding: 9px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.scen td.o { text-align: center; font-weight: 700; cursor: pointer; user-select: none; }
+.scen td.o span { display: block; font: 400 11px var(--sans); color: var(--ink-2); }
+.o-ok { background: var(--green-bg); color: var(--green); }
+.o-warn { background: var(--warn-bg); color: var(--warn); }
+.o-bad { background: var(--err-bg); color: var(--err); }
+.ask { display: grid; grid-template-columns: minmax(0, 1fr) 118px 26px; gap: 6px; align-items: center; margin-bottom: 6px; }
+.preflight .check { padding: 6px 0; }
+.tl { position: relative; }
+.tl::before { content: ""; position: absolute; left: 16px; top: 0; bottom: 0; border-left: 2px solid var(--line-2); }
+.ev { position: relative; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 14px; margin-bottom: 16px; }
+.ev > .av { position: relative; z-index: 1; box-shadow: 0 0 0 4px var(--bg); }
+.box { background: var(--paper); border: 1.5px solid var(--line); }
+.box-h { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line-2); background: var(--fill); font-size: 13px; }
+.box-h .when { color: var(--ink-3); font-size: 12px; }
+.box-h .r { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.box-b { padding: 12px 14px; }
+.box-b p { margin: 0 0 8px; } .box-b p:last-child { margin: 0; }
+.on-opt { font: 600 11px var(--mono); padding: 2px 6px; border: 1px solid var(--line-2); background: var(--paper); }
+.review-state { font: 600 11px var(--mono); padding: 3px 7px; border: 1.5px solid; }
+.rs-ok { color: var(--green); background: var(--green-bg); }
+.rs-concern { color: var(--warn); background: var(--warn-bg); }
+.rs-comment { color: var(--ink-2); background: var(--fill); }
+.resolve { display: flex; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line-2); align-items: center; flex-wrap: wrap; font-size: 12px; }
+.resolve .btn { padding: 3px 8px; font-size: 12px; border-width: 1px; }
+.resolved { color: var(--green); font: 600 11px var(--mono); }
+.local-panel { border: 1.5px dashed var(--local); background: var(--local-bg); padding: 12px; font-size: 13px; }
+.local-panel code { font: 12px var(--mono); background: #fff; border: 1px solid #d9cdf5; padding: 1px 5px; }
+.local-panel .k { font: 700 10px var(--mono); letter-spacing: 0.08em; color: var(--local); }
+.side .pn + .pn, .side > * + * { margin-top: 14px; }
+.side .row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line-2); font-size: 13px; }
+.side .row:last-child { border-bottom: 0; }
+.side .row .r { margin-left: auto; }
+.final-opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 800px) { .final-opts { grid-template-columns: minmax(0, 1fr); } }
+.final-opts button { text-align: left; padding: 12px; border: 1.5px solid var(--line-2); background: var(--paper); cursor: pointer; }
+.final-opts button.on { border: 2.5px solid var(--green); background: var(--green-bg); }
+.final-opts small { display: block; font: 11px var(--mono); color: var(--ink-2); margin-top: 4px; }
+.done-banner { border: 2px solid var(--green); background: var(--green-bg); padding: 18px 20px; }
+.done-banner h2 { margin: 6px 0; font-size: 22px; }
+.nextbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1.5px solid var(--line); }
+</style>
+</head>
+<body>
+<header class="pt-top">
+  <a class="pt-brand" href="index.html"><i>ADR</i></a>
+  <div class="pt-crumbs"><span>abtinokhovat/x</span>/<span>decisions</span>/<b>ADR-0020</b></div>
+  <span class="pt-proto">Prototype A2 · your flow</span>
+  <span id="privacy"></span>
+</header>
+<main class="wrap">
+  <div class="titlebar"><div><div class="mono dim" style="font-size:12px" id="sub"></div><h1><span class="mono">ADR-0020</span> Message broker for v1</h1></div><div style="display:flex;gap:8px;align-items:center" id="owner"></div></div>
+  <nav class="steps" id="steps"></nav>
+  <section class="stage" id="stage"></section>
+</main>
+<script src="data.js"></script>
+<script>
+const { esc, av, who, ref, linkify, toast } = H;
+const ST = STORY;
+const STAGES = [
+  { t: "Capture", s: "in the meeting", who: "me" },
+  { t: "Enrich", s: "my Claude Code", who: "me" },
+  { t: "Shape", s: "scenarios, my leaning", who: "me" },
+  { t: "Review", s: "team comments", who: "team" },
+  { t: "Finalize", s: "I decide", who: "me" },
+  { t: "Agents use it", s: "while you build", who: "agents" },
+];
+const S = {
+  stage: /^#\d$/.test(location.hash) ? +location.hash.slice(1) : 0, typed2: 0,
+  notesOpen: true, noteTags: {}, kept: {}, typed: 0, termDone: false,
+  scen: null, lean: "C", conf: 70, asks: [["Can ops run 3 brokers with one person on call?", "@mehdi-ops"], ["How far back must CDP replay?", "@reza-data"], ["Does C change realtime push?", "@lena-fe"]],
+  resolved: {}, choice: "C", merged: false,
+};
+
+const MEETING_NOTES = [
+  { by: "mehdi-ops", t: "We have nobody to run Kafka on call. If it's Kafka it must be managed.", at: "10:42" },
+  { by: "sara-dev", t: "Replay saved us twice at my last job. Don't drop it lightly.", at: "10:44" },
+  { by: "reza-data", t: "CDP rebuilds need ~2 weeks of events, not more.", at: "10:45" },
+  { by: "lena-fe", t: "Whatever we pick, realtime push reads from the same events.", at: "10:47" },
+];
+
+const CLAUDE = [
+  { k: "context", t: "Related: ADR-0004 (Kafka-protocol, Proposed), ADR-0007 (no managed Kafka found), ADR-0016 (ingest at 500 msg/s), ADR-0019 (relay spool)." },
+  { k: "option", key: "A", name: "Redpanda (Kafka API)", p: ["Ordered partitions by conversation", "Replay for CDP"], n: ["We run 3 brokers; no managed offer"] },
+  { k: "option", key: "B", name: "NATS JetStream", p: ["One binary"], n: ["Order per key needs manual subject sharding"] },
+  { k: "option", key: "C", name: "PostgreSQL only", p: ["No new system", "Managed with PITR on Hamravesh"], n: ["Replay limited to raw-row retention"] },
+  { k: "links", links: [["relates", "0004", "Kafka-protocol event log", "same problem; may become the scale path"], ["depends on", "0019", "Hosting", "managed offers decide A vs C"], ["unblocks", "0016", "Message ingestion and storage", "waits for this answer"], ["answers part of", "0007", "Tech stack and infrastructure", "the broker row"]], tags: ["messaging", "kafka", "infrastructure"], comp: "Message broker / Kafka" },
+  { k: "finding", t: "deploy/ has no broker manifests yet; go.mod has no Kafka client. Switching later costs ~1 module (pkg/kafka) because ADR-0016 already writes through an outbox." },
+];
+
+const SCEN = [
+  ["v1 load: 500 msg/s", ["ok", "ok", "ok"], ["fine", "fine", "fine on one primary"]],
+  ["Growth: 3,000 writes/s", ["ok", "warn", "bad"], ["partitions scale", "manual sharding", "needs Kafka (ADR-0004)"]],
+  ["DB outage 20 min", ["ok", "ok", "warn"], ["buffer holds", "buffer holds", "relay spool covers"]],
+  ["CDP replay 14 days", ["ok", "ok", "ok"], ["retention 14d", "stream retention", "keep raw rows 14d"]],
+  ["Ops with 1 on-call", ["bad", "warn", "ok"], ["3 brokers", "1 cluster", "managed DB"]],
+];
+
+const REVIEWS = [
+  { by: "mehdi-ops", state: "ok", opt: "C", t: "C. And thanks for the outage scenario — 20 min is our worst failover so far.", id: "r1" },
+  { by: "sara-dev", state: "concern", opt: "A", t: "I still prefer A. The 3k writes/s row says C needs Kafka anyway — we'd migrate under pressure.", id: "r2", kind: "con", reason: "Migration under load is riskier than running Redpanda now." },
+  { by: "reza-data", state: "ok", opt: "C", t: "14 days is enough. Please make retention a config value, not a constant.", id: "r3" },
+  { by: "lena-fe", state: "comment", opt: null, t: "No impact on realtime push as long as events.v1 shape is the same.", id: "r4" },
+];
+
+function privacy() {
+  const p = S.merged || S.stage === 5 ? ["done", "✓", "Accepted · merged to main"] : S.stage >= 3 ? ["shared", "◉", "Shared for review · PR #42"] : S.stage === 0 && S.notesOpen ? ["notes", "◐", "Question open for notes · drafts stay local"] : ["local", "●", "Private draft · only on your laptop"];
+  document.getElementById("privacy").innerHTML = `<span class="privacy privacy--${p[0]}"><i>${p[1]}</i>${p[2]}</span>`;
+  document.getElementById("sub").textContent = S.stage >= 3 ? `${ST.branch} → main · PR #42` : "docs/adr/0020-message-broker-for-v1.md · not pushed";
+  document.getElementById("owner").innerHTML = `${av("abtinokhovat")} <span>${who("abtinokhovat")}<br><span class="dim" style="font-size:12px">owner · decides</span></span>`;
+}
+
+function steps() {
+  document.getElementById("steps").innerHTML = STAGES.map((s, i) => `<button class="step ${i < S.stage || S.merged ? "done" : ""} ${i === S.stage && !S.merged ? "now" : ""}" data-stage="${i}"><b>${i < S.stage || S.merged ? "✓" : i + 1}</b><span>${s.t}<small>${s.s}</small></span><span class="who who--${s.who}">${s.who === "me" ? "YOU" : s.who === "team" ? "TEAM" : "AGENTS"}</span></button>`).join("");
+}
+
+const next = (label) => `<div class="nextbar"><span class="muted" style="font-size:13px">${S.stage > 0 ? `<a href="#" data-stage="${S.stage - 1}">← back</a>` : ""}</span><button class="btn btn--primary" data-stage="${S.stage + 1}">${label} →</button></div>`;
+
+// 1 ── capture in the meeting
+function capture() {
+  const notes = MEETING_NOTES.map((n, i) => `<div class="note"><div class="top">${av(n.by, "sm")} @${n.by}<time>${n.at}</time></div>${esc(n.t)}<div class="later">${["option", "pro", "con", "question", "context"].map((k) => `<button class="${S.noteTags[i] === k ? "on" : ""}" data-note="${i}:${k}">${k}</button>`).join("")}</div></div>`).join("");
+  return `<div class="two">
+  <section class="pn capture"><div class="pn-head"><span class="pn-id">1</span><h3>New question</h3><span class="pn-meta">⌘N from anywhere · or <span class="mono">adr q "…"</span></span></div><div class="pn-body" style="display:grid;gap:12px">
+    <div><div class="lbl">The question</div><input class="input" value="Which broker do we use for v1?"></div>
+    <div><div class="lbl">What we know (rough is fine — you’ll clean it up later)</div><textarea class="textarea">- ADR-0004 says Kafka-protocol, but nobody can run it
+- no managed Kafka on Hamravesh?
+- ingest (0016) starts next sprint
+- options: redpanda? nats? just postgres?
+- need replay for CDP — how much?</textarea></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px"><div><div class="lbl">Owner</div><div style="padding:8px 0">${av("abtinokhovat", "sm")} @abtinokhovat</div></div><div><div class="lbl">In the room</div><div class="avs" style="padding:6px 0">${["sara-dev", "mehdi-ops", "reza-data", "lena-fe"].map((h) => av(h)).join("")}</div></div><div><div class="lbl">Needed by</div><input class="input" value="Oct 11" style="font-size:14px;font-weight:400;padding:7px 10px"></div></div>
+  </div></section>
+  <section class="pn"><div class="pn-head"><span class="pn-id">✎</span><h3>Notes from the room</h3><span class="pn-meta">${MEETING_NOTES.length} notes · live</span></div><div class="pn-body" style="display:grid;gap:10px">
+    <div class="qr"><svg viewBox="0 0 21 21">${qr()}</svg><div><b>Open for notes</b><br><span class="mono" style="font-size:12px">x-decisions.local/q/0020</span><br><span class="muted" style="font-size:12px">Teammates see only the question and add notes. Your draft and your Claude work stay on your laptop.</span><div style="margin-top:6px"><button class="btn btn--sm" data-act="togglenotes">${S.notesOpen ? "Close notes" : "Open notes"}</button></div></div></div>
+    ${notes}
+    <div class="muted" style="font-size:12px">Tag notes now or later — tagged notes go to your draft as options, pros, cons or open questions.</div>
+  </div></section></div>${next("Continue on my laptop")}`;
+}
+function qr() {
+  let s = "";
+  for (let y = 0; y < 21; y++) for (let x = 0; x < 21; x++) {
+    const f = (x < 7 && y < 7) || (x > 13 && y < 7) || (x < 7 && y > 13);
+    const on = f ? (x % 6 === 0 || y % 6 === 0 || (x > 1 && x < 5 && y > 1 && y < 5) || (x > 15 && x < 19 && y > 1 && y < 5) || (x > 1 && x < 5 && y > 15 && y < 19) || (x === 20 || y === 20) && false) : ((x * 7 + y * 13 + x * y) % 5 < 2);
+    if (on) s += `<rect x="${x}" y="${y}" width="1" height="1" fill="#16181d"/>`;
+  }
+  return s;
+}
+
+// 2 ── enrich with my own Claude Code
+const TERM = [
+  ["p", "~/x ❯ "], ["w", "claude\n"],
+  ["d", "  Claude Code · ~/Development/x\n\n"],
+  ["p", "> "], ["w", "/adr enrich 0020 — research options and scenarios, use the meeting notes\n\n"],
+  ["c", "● Reading docs/adr/0020-message-broker-for-v1.md (draft, 4 tagged notes)\n"],
+  ["c", "● Reading ADR-0004, ADR-0007, ADR-0016, ADR-0019\n"],
+  ["c", "● Searching go.mod, deploy/, services/inbox/ for broker usage\n"],
+  ["c", "● Checking Hamravesh docs for managed Kafka / NATS (cached 2026-10-03)\n\n"],
+  ["g", "✓ Links: relates 0004 · depends on 0019 · unblocks 0016 · answers part of 0007\n"],
+  ["g", "✓ Tags + component: messaging, kafka · Message broker / Kafka\n"],
+  ["g", "✓ Options: A Redpanda · B NATS JetStream · C PostgreSQL only (with pros/cons)\n"],
+  ["g", "✓ Finding: no Kafka client in go.mod; outbox makes a later switch ~1 module\n"],
+  ["g", "✓ Wrote 5 blocks, marked “from Claude” — review them in the app\n\n"],
+  ["p", "> "], ["w", "add a scenario for a 20 minute DB outage\n\n"],
+  ["g", "✓ Scenarios table: 5 rows × 3 options\n"],
+];
+function enrich() {
+  const html = TERM.slice(0, S.typed).map(([c, t]) => `<span class="${c}">${esc(t)}</span>`).join("") + `<span class="cursor"></span>`;
+  const shown = Math.max(0, Math.min(CLAUDE.length, S.typed - 8));
+  const blocks = CLAUDE.slice(0, shown).map((b, i) => {
+    const st = S.kept[i];
+    const body = b.k === "links" ? `<div style="display:grid;gap:4px">${b.links.map(([r, id, t, why]) => `<div style="display:grid;grid-template-columns:110px 84px minmax(0,1fr);gap:8px;align-items:baseline;font-size:12.5px"><span class="mono dim">${r}</span>${ref(id)}<span><b>${esc(t)}</b> <span class="muted">— ${esc(why)}</span></span></div>`).join("")}<div class="chips" style="margin-top:4px">${b.tags.map((x) => `<span class="chip chip--tag">${x}</span>`).join("")}<span class="chip">◇ ${esc(b.comp)}</span></div><div class="mono dim" style="font-size:11px">frontmatter updated · you never search for these</div></div>` : b.k === "option" ? `<h4 style="margin:0 0 4px;font-size:14px"><span class="opt-key">${b.key}</span> ${esc(b.name)}</h4><div class="optcard pc" style="border:0;padding:0;background:none">${b.p.map((x) => `<div class="p">${esc(x)}</div>`).join("")}${b.n.map((x) => `<div class="n">${esc(x)}</div>`).join("")}</div>` : linkify(b.t);
+    return `<div class="from-claude ${st === "keep" ? "kept" : st === "drop" ? "dropped" : ""}"><div class="tagline">${st === "keep" ? "KEPT" : "FROM YOUR CLAUDE CODE"} · ${b.k.toUpperCase()}<span class="r">${st ? `<button class="btn btn--sm btn--ghost" data-keep="${i}:">undo</button>` : `<button class="btn btn--sm" data-keep="${i}:keep">Keep</button><button class="btn btn--sm btn--ghost" data-keep="${i}:edit">Edit</button><button class="btn btn--sm btn--ghost" data-keep="${i}:drop">Drop</button>`}</span></div>${body}</div>`;
+  }).join("");
+  return `<div class="two">
+  <section class="term"><div class="term-h"><i></i><i></i><i></i><span style="margin-left:8px">your terminal · Claude Code</span></div><div class="term-b">${html}</div></section>
+  <section class="pn"><div class="pn-head"><span class="pn-id">2</span><h3>Your draft, updating live</h3><span class="pn-meta"><span class="live">watching docs/adr/0020-*.md</span></span></div><div class="pn-body" style="display:grid;gap:10px">
+    <div class="note" style="border-left-color:var(--ink)"><div class="top">question · from the meeting</div><b>Which broker carries inbound buffering and domain events in v1?</b></div>
+    ${blocks || `<div class="muted" style="font-size:13px">Run <span class="mono">/adr enrich 0020</span> in Claude Code. What it writes shows up here, marked so you can keep or drop it.</div>`}
+    <div class="local-panel"><span class="k">PRIVATE</span> Nothing here is shared. Claude Code reads and writes the markdown file in your repo; this page only shows it.</div>
+  </div></section></div>${next("Shape it")}`;
+}
+
+// 3 ── shape: scenarios, leaning, questions for the team
+function shape() {
+  const sc = S.scen ?? SCEN.map((r) => [...r[1]]);
+  S.scen = sc;
+  const mark = { ok: "✓", warn: "!", bad: "✗" };
+  const opts = ST.options.map((o) => `<div class="optcard ${S.lean === o.key ? "lean" : ""}"><h4><span class="opt-key">${o.key}</span>${esc(o.name)}${S.lean === o.key ? `<span class="pill pill--accepted" style="margin-left:auto">my leaning</span>` : ""}</h4><div class="pc">${CLAUDE.find((c) => c.key === o.key).p.map((x) => `<div class="p">${esc(x)}</div>`).join("")}${CLAUDE.find((c) => c.key === o.key).n.map((x) => `<div class="n">${esc(x)}</div>`).join("")}</div><button class="btn btn--sm btn--ghost" style="margin-top:6px" data-lean="${o.key}">${S.lean === o.key ? "✓ leaning" : "Lean to this"}</button></div>`).join("");
+  const rows = SCEN.map((r, i) => `<tr><td>${esc(r[0])}</td>${[0, 1, 2].map((j) => `<td class="o o-${sc[i][j]}" data-sc="${i}:${j}" title="click to change">${mark[sc[i][j]]}<span>${esc(r[2][j])}</span></td>`).join("")}</tr>`).join("");
+  const pf = [["Every option has pros and cons with reasons", true], ["Scenarios cover load, failure, ops and data", true], ["My leaning and why", !!S.lean], ["Questions assigned to people", S.asks.every((a) => a[1])]];
+  return `<div class="two-r"><div style="display:grid;gap:18px">
+  <section class="pn"><div class="pn-head"><span class="pn-id">3</span><h3>Options</h3><span class="pn-meta">from your Claude, edited by you</span></div><div class="pn-body" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px">${opts}</div></section>
+  <section class="pn"><div class="pn-head"><span class="pn-id">S</span><h3>Scenarios</h3><span class="pn-meta">click a cell to change ✓ ! ✗</span></div><div class="pn-body flush"><table class="scen"><thead><tr><th>What happens if…</th>${ST.options.map((o) => `<th style="text-align:center">${o.key} — ${esc(o.name)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>
+  <div style="padding:8px 12px;font-size:12.5px" class="muted">Ask your Claude for more: <span class="mono">“add a scenario where CDP needs 30 days of replay”</span></div></div></section>
+  </div>
+  <div class="side">
+    <section class="pn"><div class="pn-head"><span class="pn-id">L</span><h3>My leaning</h3></div><div class="pn-body"><b>${S.lean} — ${esc(ST.options.find((o) => o.key === S.lean).name)}</b><div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:12.5px" class="muted">confidence <input type="range" min="0" max="100" value="${S.conf}" id="conf" style="flex:1"><span class="mono" id="confv">${S.conf}%</span></div><textarea class="textarea" style="margin-top:8px;min-height:60px">Smallest ops load now. The outbox keeps Kafka as a cheap later step (ADR-0004).</textarea></div></section>
+    <section class="pn"><div class="pn-head"><span class="pn-id">?</span><h3>Ask the team</h3><span class="pn-meta">${S.asks.length}</span></div><div class="pn-body">${S.asks.map((a, i) => `<div class="ask"><input class="input" value="${esc(a[0])}" style="font-size:12.5px;padding:5px 7px"><select class="select" style="font-size:12px;padding:5px">${["@mehdi-ops", "@sara-dev", "@reza-data", "@lena-fe"].map((h) => `<option ${h === a[1] ? "selected" : ""}>${h}</option>`).join("")}</select><button class="btn btn--sm btn--ghost" data-delask="${i}">×</button></div>`).join("")}<button class="btn btn--sm" data-act="addask">+ question</button></div></section>
+    <section class="pn preflight"><div class="pn-head"><span class="pn-id">✓</span><h3>Ready for review?</h3></div><div class="pn-body">${pf.map(([t, ok]) => `<div class="check ${ok ? "ok" : "wait"}"><i>${ok ? "✓" : "·"}</i>${t}</div>`).join("")}
+      <div class="sep"></div><div class="muted" style="font-size:12.5px">Sharing pushes <span class="mono">${ST.branch}</span>, opens PR #42, and requests review from the people you asked. Your Claude session is not shared.</div>
+      <button class="btn btn--primary" style="width:100%;margin-top:10px;justify-content:center" data-stage="4" data-share="1">Share for review →</button></div></section>
+  </div></div>`;
+}
+
+// 4 ── team review (shared PR — people only)
+function review() {
+  const open = REVIEWS.filter((r) => !S.resolved[r.id]).length;
+  const ev = [];
+  ev.push(`<div class="ev">${av("abtinokhovat", "lg")}<div class="box"><div class="box-h">${who("abtinokhovat")} <span class="muted">asked for review</span><span class="when">yesterday 16:10</span><span class="r"><span class="chip">owner</span></span></div><div class="box-b">
+    <p><b>Leaning C — PostgreSQL only (70%).</b> Options, scenarios and the meeting notes are in the ADR. Three questions for you:</p>
+    ${S.asks.map((a) => `<div class="note" style="border-left-color:var(--accent);margin-bottom:6px"><div class="top">for ${esc(a[1])}</div>${esc(a[0])}</div>`).join("")}
+    <p class="mono dim" style="font-size:11.5px;margin-top:8px">Includes 4 meeting notes from Oct 3 · drafted with Claude Code by @abtinokhovat</p></div></div></div>`);
+  for (const r of REVIEWS) {
+    const st = { ok: ["rs-ok", "approves " + r.opt], concern: ["rs-concern", "concern · prefers " + r.opt], comment: ["rs-comment", "comment"] }[r.state];
+    const res = S.resolved[r.id];
+    ev.push(`<div class="ev">${av(r.by, "lg")}<div class="box" style="${r.state === "concern" ? "border-color:var(--warn)" : ""}"><div class="box-h">${who(r.by)} <span class="muted">reviewed</span><span class="when">today</span><span class="r"><span class="review-state ${st[0]}">${st[1]}</span></span></div><div class="box-b"><p>${linkify(r.t)}</p>
+    ${r.kind ? `<div class="arg arg--con"><div class="arg-top">con on option C · suggested</div>C needs a migration under load at 3,000 writes/s<div class="arg-why">${esc(r.reason)}</div></div>` : ""}
+    <div class="resolve">${res ? `<span class="resolved">✓ ${esc(res)}</span><a href="#" data-unres="${r.id}">undo</a>` : `<span class="dim">Your response:</span><button class="btn" data-res="${r.id}:Agreed">Agree</button>${r.kind ? `<button class="btn" data-res="${r.id}:Added con to the ADR">Add con to ADR</button>` : ""}<button class="btn" data-res="${r.id}:Replied">Reply</button><button class="btn btn--ghost" data-res="${r.id}:Noted, no change">Noted</button>`}</div></div></div></div>`);
+  }
+  const reviewers = ["mehdi-ops", "sara-dev", "reza-data", "lena-fe"];
+  return `<div class="two-r"><div class="tl">${ev.join("")}
+    <div class="ev">${av("abtinokhovat", "lg")}<div class="box"><div class="box-b"><textarea class="textarea" placeholder="Reply, or add a pro / con / scenario…"></textarea><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px"><button class="btn" data-act="noop">+ Scenario</button><button class="btn btn--primary" data-act="noop">Comment</button></div></div></div></div></div>
+  <div class="side">
+    <section class="pn"><div class="pn-head"><span class="pn-id">R</span><h3>Reviewers</h3><span class="pn-meta">4 of 4</span></div><div class="pn-body">${reviewers.map((h) => { const r = REVIEWS.find((x) => x.by === h); const c = { ok: "rs-ok", concern: "rs-concern", comment: "rs-comment" }[r.state]; return `<div class="row">${av(h, "sm")} ${who(h)}<span class="r review-state ${c}">${r.state === "ok" ? "✓ " + r.opt : r.state === "concern" ? "! " + r.opt : "💬"}</span></div>`; }).join("")}</div></section>
+    <section class="pn"><div class="pn-head"><span class="pn-id">!</span><h3>To finalize</h3></div><div class="pn-body"><div class="check ${open ? "wait" : "ok"}"><i>${open ? "·" : "✓"}</i>${open ? `${open} reviews need your response` : "All reviews answered"}</div><div class="check ok"><i>✓</i>All asked people responded</div><div class="check ok"><i>✓</i>adr lint passes</div>
+    <button class="btn btn--primary" style="width:100%;justify-content:center;margin-top:10px" data-stage="4" ${open ? "disabled" : ""}>Finalize →</button></div></section>
+    <div class="local-panel"><span class="k">ON YOUR LAPTOP ONLY</span><br>Pull the review into your repo and let Claude help you answer:<br><code>adr pull 0020</code> → <code>.adr/reviews/0020.md</code><br>then in Claude Code: <code>/adr digest 0020</code> — “summarize concerns and draft my replies”.</div>
+  </div></div>`;
+}
+
+// 5 ── finalize
+function finalize() {
+  if (S.merged) return `<div class="done-banner"><span class="pill pill--accepted">accepted · Oct 9</span><h2>ADR-0020 — v1 runs without a broker (option ${S.choice})</h2><p class="muted" style="margin:0">Decided by @abtinokhovat · reviewed by @mehdi-ops, @sara-dev, @reza-data, @lena-fe · 1 concern recorded</p>
+  <div class="chk" style="margin-top:12px">${["PR #42 merged → docs/adr/0020-message-broker-for-v1.md", "Sara’s concern recorded as dissent with trigger “3,000 writes/s or replay > 14 days”", "Reza’s note: retention is a config value (follow-up #51)", "Links kept both ways by your Claude: ADR-0004 → “scale path, see 0020” · ADR-0016 unblocked · ADR-0007 broker row answered", "architecture.yaml: Message broker / Kafka now shows 0020", "Meeting notes kept in the ADR history"].map((s) => `<div class="check ok"><i>✓</i>${s}</div>`).join("")}</div>
+  <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn--primary" data-stage="5">Next: how agents use it →</button><button class="btn" data-act="reset">Replay demo</button></div></div>`;
+  const picks = { A: ["sara-dev"], B: [], C: ["abtinokhovat", "mehdi-ops", "reza-data"] };
+  return `<div class="two-r"><section class="pn"><div class="pn-head"><span class="pn-id">5</span><h3>Finalize</h3><span class="pn-meta">you decide</span></div><div class="pn-body" style="display:grid;gap:14px">
+    <div class="final-opts">${ST.options.map((o) => `<button class="${S.choice === o.key ? "on" : ""}" data-choice="${o.key}"><b>${o.key} — ${esc(o.name)}</b><small>${picks[o.key].length} in favor</small><div class="avs" style="margin-top:6px">${picks[o.key].map((h) => av(h, "sm")).join("")}</div></button>`).join("")}</div>
+    <div><div class="lbl">Decision</div><textarea class="textarea">Run v1 without a broker. PostgreSQL holds the raw update table, job tables and the outbox. Raw-row retention is a config value, default 14 days. ADR-0004 stays the scale path.</textarea></div>
+    <div><div class="lbl">Dissent (recorded in the ADR)</div><div class="arg arg--q">${av("sara-dev", "sm")} @sara-dev prefers A — migration under load is riskier than running Redpanda now.<div class="arg-why">Revisit when writes reach 3,000/s or a consumer needs replay &gt; 14 days.</div></div></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn" data-act="md">Preview markdown</button><button class="btn btn--green" data-act="merge">Accept &amp; merge</button></div>
+    <div id="md" class="hidden"><div class="md-preview">${esc(H.finalMd(S.choice))}</div></div>
+  </div></section>
+  <div class="side"><div class="local-panel"><span class="k">YOUR CLAUDE ON FINALIZE</span><br><code>/adr finalize 0020 C</code> writes the final text from the review, records dissent and triggers, and fixes every link: status of ADR-0004, “unblocked” on 0016, the map. You only merge.</div>
+  <section class="pn" style="margin-top:14px"><div class="pn-head"><span class="pn-id">↔</span><h3>Links after merge</h3></div><div class="pn-body" style="font-size:12.5px;display:grid;gap:6px">${[["0004", "relates · becomes scale path"], ["0019", "depends on"], ["0016", "unblocked by this"], ["0007", "answers the broker row"]].map(([id, t]) => `<div>${ref(id)} <span class="muted">${t}</span></div>`).join("")}</div></section></div></div>`;
+}
+
+// 6 ── agents read decisions while you build
+const DEV = [
+  ["p", "~/x ❯ "], ["w", "claude\n\n"],
+  ["p", "> "], ["w", "add a consumer so CDP gets new messages as they arrive\n\n"],
+  ["c", "● Checking decisions first: adr context services/cdp messaging\n"],
+  ["d", "  ADR-0020 Accepted  Message broker for v1 → no broker in v1 (PostgreSQL outbox)\n"],
+  ["d", "  ADR-0004 Proposed  Kafka-protocol event log → scale path, not built yet\n"],
+  ["d", "  ADR-0016 Proposed  Message ingestion → outbox relay reads in-process\n\n"],
+  ["w", "ADR-0020 decided v1 runs without a broker, so I won't add a Kafka consumer.\n"],
+  ["w", "I'll read inbox events from the outbox relay in-process, as ADR-0016 describes.\n"],
+  ["w", "Note: ADR-0020 reopens if a consumer needs replay > 14 days. CDP needs 14 —\n"],
+  ["w", "inside the limit, so no conflict.\n\n"],
+  ["g", "✓ services/cdp/ingest/relay_consumer.go\n"],
+  ["g", "✓ Commit message cites ADR-0020, ADR-0016\n"],
+];
+function agentsUse() {
+  const html = DEV.slice(0, S.typed2 ?? 0).map(([c, t]) => `<span class="${c}">${esc(t)}</span>`).join("") + `<span class="cursor"></span>`;
+  return `<div class="two">
+  <section class="term" style="min-height:440px"><div class="term-h"><i></i><i></i><i></i><span style="margin-left:8px">two weeks later · a teammate’s Claude Code</span></div><div class="term-b">${html}</div></section>
+  <div style="display:grid;gap:18px">
+    <section class="pn"><div class="pn-head"><span class="pn-id">6</span><h3>What an agent reads from ADR-0020</h3><span class="pn-meta">adr context · JSON</span></div><div class="pn-body" style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 12px;align-items:baseline;font-size:13px">
+      <span class="pill pill--accepted">decided</span><span>No broker in v1. PostgreSQL holds raw rows, jobs and the outbox.</span>
+      <span class="pill pill--err">rejected</span><span>A Redpanda — we would run 3 brokers · B NATS — order needs manual sharding</span>
+      <span class="pill pill--open">reopen when</span><span>writes &gt; 3,000/s · a consumer needs replay &gt; 14 days</span>
+      <span class="pill pill--review">applies to</span><span><span class="mono">services/inbox/**, services/cdp/**, deploy/</span> · Message broker</span>
+      <span class="pill pill--agent">how we thought</span><span>5 scenarios, 4 reviews, 1 dissent (@sara-dev) — the ADR keeps the reasoning</span>
+    </div></section>
+    <section class="pn"><div class="pn-head"><span class="pn-id">⚑</span><h3>Guardrails, not just history</h3></div><div class="pn-body" style="display:grid;gap:8px;font-size:13px">
+      <div class="check ok"><i>✓</i><span>Agents run <span class="mono">adr context &lt;paths&gt;</span> before changing code (set in the adr skill + CLAUDE.md)</span></div>
+      <div class="check ok"><i>✓</i>A change that conflicts with an Accepted ADR is flagged, not silently made</div>
+      <div class="check ok"><i>✓</i>Hitting a “reopen when” trigger opens a draft question for the owner</div>
+      <div class="check ok"><i>✓</i>Commits and PRs cite the ADRs they follow, so links grow on their own</div>
+    </div></section>
+  </div></div>
+  <div class="nextbar"><a href="#" data-stage="4">← back</a><a class="btn" href="index.html">All prototypes</a></div>`;
+}
+
+function render() {
+  privacy();
+  steps();
+  const fns = [capture, enrich, shape, review, finalize, agentsUse];
+  document.getElementById("stage").innerHTML = fns[S.stage]();
+  const c = document.getElementById("conf");
+  if (c) c.oninput = () => { S.conf = +c.value; document.getElementById("confv").textContent = `${S.conf}%`; };
+  if (S.stage === 1 && S.typed < TERM.length) setTimeout(() => { if (S.stage === 1) { S.typed++; render(); } }, S.typed < 5 ? 160 : 380);
+  if (S.stage === 5 && (S.typed2 ?? 0) < DEV.length) setTimeout(() => { if (S.stage === 5) { S.typed2 = (S.typed2 ?? 0) + 1; render(); } }, 300);
+}
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-stage],[data-note],[data-keep],[data-lean],[data-sc],[data-delask],[data-res],[data-unres],[data-choice],[data-act]");
+  if (!t) return;
+  e.preventDefault();
+  if (t.dataset.stage != null) {
+    const n = +t.dataset.stage;
+    if (n > 5) return;
+    if (t.dataset.share) toast("Pushed adr/0020-broker-v1 · PR #42 opened · review requested from 4 people");
+    S.stage = n; S.merged = false;
+    history.replaceState(null, "", `#${n}`);
+    return render();
+  }
+  if (t.dataset.note) { const [i, k] = t.dataset.note.split(":"); S.noteTags[i] = S.noteTags[i] === k ? null : k; return render(); }
+  if (t.dataset.keep) { const [i, v] = t.dataset.keep.split(":"); S.kept[i] = v === "edit" ? "keep" : v || undefined; if (v === "edit") toast("Opens the block in your editor — or tell Claude what to change"); return render(); }
+  if (t.dataset.lean) { S.lean = t.dataset.lean; return render(); }
+  if (t.dataset.sc) { const [i, j] = t.dataset.sc.split(":").map(Number); const cyc = ["ok", "warn", "bad"]; S.scen[i][j] = cyc[(cyc.indexOf(S.scen[i][j]) + 1) % 3]; return render(); }
+  if (t.dataset.delask) { S.asks.splice(+t.dataset.delask, 1); return render(); }
+  if (t.dataset.res) { const [id, v] = t.dataset.res.split(":"); S.resolved[id] = v; return render(); }
+  if (t.dataset.unres) { delete S.resolved[t.dataset.unres]; return render(); }
+  if (t.dataset.choice) { S.choice = t.dataset.choice; return render(); }
+  const a = t.dataset.act;
+  if (a === "togglenotes") { S.notesOpen = !S.notesOpen; toast(S.notesOpen ? "Question open for notes" : "Notes closed · the link stops accepting notes"); return render(); }
+  if (a === "addask") { S.asks.push(["", "@sara-dev"]); return render(); }
+  if (a === "md") return document.getElementById("md").classList.toggle("hidden");
+  if (a === "merge") { S.merged = true; toast("ADR-0020 accepted · PR #42 merged"); return render(); }
+  if (a === "reset") { location.hash = "#0"; location.reload(); return; }
+  if (a === "noop") return toast("Posted");
+});
+// ?fast skips the typing animation (screenshots, demos)
+if (new URLSearchParams(location.search).has("fast")) { S.typed = TERM.length; S.typed2 = DEV.length; }
+render();
+</script>
+</body>
+</html>
