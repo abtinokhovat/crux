@@ -1,0 +1,12 @@
+# adr-kit config — https://github.com/ (see README)
+title: example decisions
+dir: docs/adr                         # ADR markdown files: NNNN-kebab-title.md
+architecture: docs/adr/architecture.yaml
+components: .adr/components           # project components: *.mjs exporting { name, render }
+template: .adr/template.md            # used by "adr new" (falls back to the built-in one)
+docs: []                              # extra markdown folders to index, e.g. [docs/design, docs/research]
+prefix: ADR
+# statuses:                           # add or recolor statuses (ok|info|warn|err|mute|purple|#hex)
+#   piloting: { label: Piloting, color: purple, order: 2 }
+# tags:
+#   kafka: { desc: Event log and streaming }

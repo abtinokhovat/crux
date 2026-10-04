@@ -1,0 +1,38 @@
+# Architecture map. Nodes nest with "children"; ADRs link with "adrs: [4]"
+# or from the ADR side with "components: [kafka]". Edges may connect any two nodes;
+# each zoom level shows them between the boxes visible there.
+title: example
+desc: Select a box to see its decisions.
+nodes:
+  - id: clients
+    label: Clients
+    kind: actor
+    sub: web and mobile apps
+  - id: backend
+    label: Backend
+    kind: context
+    sub: services and modules
+    children:
+      - id: api
+        label: API
+        kind: component
+  - id: messaging
+    label: Message broker
+    kind: infra
+    sub: async events between services
+    children:
+      - id: kafka
+        label: Kafka
+        kind: tech
+        tags: [kafka]
+  - id: storage
+    label: Storage
+    kind: store
+    children:
+      - id: postgres
+        label: PostgreSQL
+        kind: tech
+edges:
+  - clients -> api: HTTP
+  - api -> kafka: domain events
+  - api -> postgres: SQL

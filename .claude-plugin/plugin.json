@@ -1,0 +1,7 @@
+{
+  "name": "adr-kit",
+  "version": "0.1.0",
+  "description": "AI-driven Architecture Decision Records: write, backfill and visualize decisions (graph, architecture drill-down, tags, search) from markdown in your repo.",
+  "author": { "name": "Abtin Okhovat" },
+  "keywords": ["adr", "architecture", "decisions", "documentation"]
+}

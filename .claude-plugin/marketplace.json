@@ -1,0 +1,13 @@
+{
+  "name": "adr-kit",
+  "owner": { "name": "Abtin Okhovat" },
+  "metadata": { "description": "Skills for recording and visualizing architecture decisions." },
+  "plugins": [
+    {
+      "name": "adr-kit",
+      "source": "./",
+      "description": "adr skill (write / backfill / review ADRs with the adr CLI) + answer-me-with-html (visual explainer pages; also the renderer used by the app).",
+      "version": "0.1.0"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" data-theme="blueprint">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decision records</title>
+<link rel="stylesheet" href="api/theme.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="ak-top">
+  <div class="ak-top-in">
+    <a class="ak-brand" href="#/"><i>ADR</i><span id="brand-title">Decision records</span></a>
+    <nav class="ak-nav" id="nav" aria-label="Views">
+      <a href="#/" data-route="home">Overview</a>
+      <a href="#/list" data-route="list">Decisions <b id="nav-count"></b></a>
+      <a href="#/map" data-route="map">Architecture</a>
+      <a href="#/graph" data-route="graph">Graph</a>
+      <a href="#/tags" data-route="tags">Tags</a>
+      <a href="#/components" data-route="components">Components</a>
+    </nav>
+    <div class="ak-tools">
+      <button class="ak-btn ak-search-btn" id="open-search" type="button"><span>Search decisions…</span><kbd>⌘K</kbd></button>
+      <span class="ak-live off" id="live" title="Live reload"></span>
+    </div>
+  </div>
+</header>
+<main class="ak-main" id="view"><div class="ak-empty">Loading…</div></main>
+<div class="ak-toast" id="toast"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
