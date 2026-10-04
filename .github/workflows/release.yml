@@ -1,35 +1,90 @@
-# Push a tag like v0.1.0 to publish binaries (GitHub Releases) and the share-server image (GHCR).
+# Publish binaries (GitHub Releases) and the share-server image (GHCR).
+# Either push a tag (git tag v0.1.0 && git push origin v0.1.0), or run this workflow from the
+# Actions tab with a version — it tags the chosen commit and releases in the same run
+# (a tag pushed with GITHUB_TOKEN does not trigger other workflows).
 name: release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. v0.1.0"
+        required: true
 permissions:
   contents: write
   packages: write
+concurrency: release
 jobs:
-  binaries:
+  tag:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+      - id: tag
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT: ${{ inputs.version }}
+          REF: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" = "push" ]; then
+            echo "tag=$REF" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "$INPUT" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::version must look like v1.2.3, got '$INPUT'"; exit 1 ;;
+          esac
+          if git rev-parse -q --verify "refs/tags/$INPUT" >/dev/null; then
+            echo "::error::tag $INPUT already exists"; exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$INPUT" -m "$INPUT"
+          git push origin "$INPUT"
+          echo "tag=$INPUT" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.tag.outputs.tag }}" }
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - run: go vet ./...
+      - run: go test ./...
+
+  binaries:
+    needs: [tag, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ needs.tag.outputs.tag }}", fetch-depth: 0 }
       - uses: actions/setup-go@v5
         with: { go-version-file: go.mod }
       - uses: goreleaser/goreleaser-action@v6
         with: { version: "~> v2", args: release --clean }
         env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+
   image:
+    needs: [tag, test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { ref: "${{ needs.tag.outputs.tag }}" }
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
       - uses: docker/build-push-action@v6
         with:
+          context: .
           push: true
           platforms: linux/amd64,linux/arm64
-          build-args: VERSION=${{ github.ref_name }}
+          build-args: VERSION=${{ needs.tag.outputs.tag }}
           tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:${{ needs.tag.outputs.tag }}
             ghcr.io/${{ github.repository }}:latest
