@@ -1,10 +1,15 @@
-// adr-kit single-page app: router, overview, decision list, ADR page, tags, components.
+// crux single-page app: router, overview, decision list, ADR page, tags, components.
 import { $, $$, S, ancestors, esc, gist, href, index, label, nodeChip, optionStats, pill, refChip, statusLabel, statusOrder, tagChip, toast } from "./util.js";
 import { renderGraph } from "./graph.js";
 import { renderMap } from "./map.js";
 import { openSearch, search } from "./search.js";
 import { archTree, areaBars, history, panel, register, sheet, statusCell, titleBlock } from "./blueprint.js";
 import { bindFlow, finalizeHtml, flowStrip, openNewQuestion, privacy, sharePanel, shareOf, teamHtml } from "./flow.js";
+import { componentsCss, listComponents, loadProjectComponents, renderAdr, themeCss } from "./vendor/crux-render.js";
+
+// Theme tokens come from the renderer (answer-me-with-html themes), so the page and the
+// rendered ADRs always agree.
+document.head.insertAdjacentHTML("afterbegin", `<style id="crux-theme">${themeCss()}</style>`);
 
 const view = $("#view");
 let cleanup = null;
@@ -19,12 +24,26 @@ async function loadSite() {
   $("#nav-count").textContent = site.adrs.length;
   injectStatusCss(site.statuses);
   $("#new-q")?.classList.toggle("hidden", !site.local);
+  // project components (.crux/components/*.mjs) run in the browser, next to the built-in ones
+  const sig = JSON.stringify(site.projectComponents ?? []);
+  if (sig !== loadSite.sig) {
+    loadSite.sig = sig;
+    await loadProjectComponents(site.projectComponents ?? []);
+    let el = $("#crux-components");
+    if (!el) document.head.append((el = Object.assign(document.createElement("style"), { id: "crux-components" })));
+    el.textContent = componentsCss();
+  }
+  site.components = listComponents();
   return site;
 }
 
+// The backend sends markdown; the page renders it with the same renderer reviewers use.
 async function loadDoc(id) {
   if (!S.docCache.has(id)) S.docCache.set(id, fetch(`api/doc/${encodeURIComponent(id)}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)));
-  return S.docCache.get(id);
+  const doc = await S.docCache.get(id);
+  if (!doc) return null;
+  const { html, errors } = renderAdr({ ...doc.meta, source: doc.source }, { byId: S.byId }, { prefix: S.site.prefix, digits: S.site.digits ?? 4, statuses: S.site.statuses });
+  return { ...doc, html, errors };
 }
 
 // Statuses are configurable; map each to a palette color.
@@ -383,14 +402,14 @@ ${nodes.length ? `<div class="ak-filters"><span class="ak-label">Components</spa
 
 // ── components gallery ───────────────────────────────────
 function components() {
-  const groups = { builtin: "Decision components (adr-kit)", "answer-me-with-html": "Diagram + layout components (answer-me-with-html)" };
+  const groups = { builtin: "Decision components (crux)", "answer-me-with-html": "Diagram + layout components (answer-me-with-html)" };
   const by = new Map();
   for (const c of S.site.components) {
     const g = groups[c.origin] ?? `Project · ${c.origin}`;
     if (!by.has(g)) by.set(g, []);
     by.get(g).push(c);
   }
-  return `<div class="ak-page-head"><div><h1>Components</h1><p>Fenced blocks you can use in any ADR. Add your own in <code>.adr/components/*.mjs</code>.</p></div></div>
+  return `<div class="ak-page-head"><div><h1>Components</h1><p>Fenced blocks you can use in any ADR. Add your own in <code>.crux/components/*.mjs</code>.</p></div></div>
 <div class="ak-grid">${[...by]
     .map(([g, cs]) => `<section class="ak-box s12"><header class="am-panel-head"><span class="am-panel-id">${cs.length}</span><h2>${esc(g)}</h2></header>${cs.map((c) => `<div class="ak-comp"><div><h3>${esc(c.name)}</h3><small>${esc(c.summary)}</small></div><div>${c.syntax ? `<pre>${esc(c.syntax)}</pre>` : ""}${c.example ? `<pre>${esc(c.example)}</pre>` : ""}</div></div>`).join("")}</section>`)
     .join("")}
@@ -456,14 +475,14 @@ function setupCopy() {
 
 function prefs() {
   try {
-    return JSON.parse(localStorage.getItem("adr-kit:prefs") || "{}");
+    return JSON.parse(localStorage.getItem("crux:prefs") || "{}");
   } catch {
     return {};
   }
 }
 function savePrefs(patch) {
   try {
-    localStorage.setItem("adr-kit:prefs", JSON.stringify({ ...prefs(), ...patch }));
+    localStorage.setItem("crux:prefs", JSON.stringify({ ...prefs(), ...patch }));
   } catch {}
 }
 

@@ -1,20 +1,22 @@
-# adr share server — meeting notes and team review for ADRs.
-# docker build -t adr-share . && docker run -p 8080:8080 -v adr-data:/data \
-#   -e ADR_TOKENS="you:long-random-token" -e ADR_PASSCODE="team-secret" \
-#   -e ADR_PUBLIC_URL="https://adr.example.com" adr-share
-FROM node:22-alpine
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
-COPY bin ./bin
-COPY src ./src
-COPY web ./web
-COPY templates ./templates
-COPY skills/answer-me-with-html/scripts ./skills/answer-me-with-html/scripts
-ENV NODE_ENV=production PORT=8080 HOST=0.0.0.0 ADR_DATA=/data
-RUN mkdir -p /data && chown node:node /data
+# crux share server — meeting notes and team review for ADRs.
+#   docker build -t crux .
+#   docker run -d -p 8080:8080 -v crux-data:/data \
+#     -e CRUX_TOKENS="you:$(openssl rand -hex 24)" -e CRUX_PASSCODE="team-secret" \
+#     -e CRUX_PUBLIC_URL="https://crux.example.com" crux
+FROM golang:1.24-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /crux ./cmd/crux
+
+FROM alpine:3.20
+RUN adduser -D -H crux && mkdir -p /data && chown crux /data
+COPY --from=build /crux /usr/local/bin/crux
+USER crux
+ENV PORT=8080 HOST=0.0.0.0 CRUX_DATA=/data
 VOLUME /data
 EXPOSE 8080
-USER node
 HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://127.0.0.1:8080/healthz || exit 1
-CMD ["node", "bin/adr.mjs", "server"]
+ENTRYPOINT ["crux", "server"]

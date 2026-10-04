@@ -3,7 +3,7 @@
 import { $, $$, S, esc, href, optionStats, toast } from "./util.js";
 
 export const api = async (path, body) => {
-  const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json", "x-adr": "1" }, body: JSON.stringify(body ?? {}) });
+  const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json", "x-crux": "1" }, body: JSON.stringify(body ?? {}) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
   return j;
@@ -42,7 +42,7 @@ export function privacy(a) {
 export function flowStrip(a) {
   if (!S.site.local || !["draft", "open", "review", "accepted"].includes(a.statusKey)) return "";
   const cur = stageOf(a);
-  return `<nav class="ak-flow" aria-label="Decision flow">${STAGES.map(([t, s, w], i) => `<div class="ak-flow-step ${i < cur ? "done" : ""} ${i === cur ? "now" : ""}"><b>${i < cur ? "✓" : i + 1}</b><span>${t}<small>${s}</small></span><em class="ak-flow-who ak-flow-who--${w}">${w === "you" ? "YOU" : "TEAM"}</em></div>`).join("")}</nav>`;
+  return `<nav class="ak-flow" aria-label="Decision flow">${STAGES.map(([t, s, w], i) => `<div class="ak-flow-step ${i < cur ? "done" : ""} ${i === cur ? "now" : ""}"><b>${i + 1}</b><span>${t}<small>${s}</small></span><em class="ak-flow-who ak-flow-who--${w}">${w === "you" ? "YOU" : "TEAM"}</em></div>`).join("")}</nav>`;
 }
 
 // ── rail: sharing controls ──────────────────────────────────────────
@@ -51,8 +51,8 @@ export function sharePanel(a) {
   const s = S.site.share ?? {};
   const sh = shareOf(a);
   let body;
-  if (!s.url) body = `<p class="muted" style="margin:0 0 8px;font-size:13px">No share server set. To collect notes and reviews from the team:</p><pre class="ak-mini-code">share: https://adr.your-domain.com</pre><p class="muted" style="font-size:12px;margin:6px 0 0">in adr.config.yaml, then <span class="mono">adr login &lt;url&gt; --token …</span></p>`;
-  else if (!s.loggedIn) body = `<p class="muted" style="margin:0;font-size:13px">Log in to <span class="mono">${esc(s.url)}</span>:</p><pre class="ak-mini-code">adr login ${esc(s.url)} --token …</pre>`;
+  if (!s.url) body = `<p class="muted" style="margin:0 0 8px;font-size:13px">No share server set. To collect notes and reviews from the team:</p><pre class="ak-mini-code">share: https://crux.your-domain.com</pre><p class="muted" style="font-size:12px;margin:6px 0 0">in crux.config.yaml, then <span class="mono">crux login &lt;url&gt; --token …</span></p>`;
+  else if (!s.loggedIn) body = `<p class="muted" style="margin:0;font-size:13px">Log in to <span class="mono">${esc(s.url)}</span>:</p><pre class="ak-mini-code">crux login ${esc(s.url)} --token …</pre>`;
   else if (!sh)
     body = `<p class="muted" style="margin:0 0 10px;font-size:13px">Only you can see this. Share when you want input.</p><div class="ak-share-acts"><button class="ak-btn" data-flow="notes">◐ Open for notes</button>${a.facts.options.length ? `<button class="ak-btn ak-btn--primary" data-flow="share">◉ Share for review</button>` : ""}</div><p class="muted" style="font-size:11.5px;margin:8px 0 0">Notes: the room sees only the question. Review: the team sees this page and gives picks, pros, cons and answers.</p>`;
   else
@@ -128,7 +128,7 @@ export function openNewQuestion() {
     <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end"><div><div class="ak-mini-label">Needed by</div><input class="ak-in" name="due" placeholder="Oct 11"></div>
     ${canShare ? `<label style="display:flex;gap:6px;align-items:center;font-size:13px;padding-bottom:8px"><input type="checkbox" name="openNotes"> open for notes now</label>` : ""}</div>
     <div style="display:flex;justify-content:flex-end;gap:8px"><button type="button" class="ak-btn ak-btn--ghost" data-close>Cancel</button><button class="ak-btn ak-btn--primary">Create draft</button></div>
-    <p class="muted" style="margin:0;font-size:12px">Then in Claude Code: <span class="mono">/adr enrich &lt;id&gt;</span> — it researches options and links related ADRs.</p>
+    <p class="muted" style="margin:0;font-size:12px">Then in Claude Code: <span class="mono">/crux enrich &lt;id&gt;</span> — it researches options and links related ADRs.</p>
   </div></form>`;
   document.body.append(m);
   m.addEventListener("click", (e) => { if (e.target === m || e.target.closest("[data-close]")) m.remove(); });
@@ -174,7 +174,7 @@ export function bindFlow(a, rerender) {
         if (f === "notes") { const r = await api(`/api/doc/${id}/notes`); try { await navigator.clipboard.writeText(r.url); } catch {} toast("Open for notes — link copied"); }
         if (f === "share") { const r = await api(`/api/doc/${id}/share`); try { await navigator.clipboard.writeText(r.url); } catch {} toast("Shared for review — link copied"); }
         if (f === "close") { await api(`/api/doc/${id}/close`); toast("Closed"); }
-        if (f === "pull") { const r = await api(`/api/doc/${id}/pull`); toast(`Wrote ${r.file} — run /adr digest ${id}`); }
+        if (f === "pull") { const r = await api(`/api/doc/${id}/pull`); toast(`Wrote ${r.file} — run /crux digest ${id}`); }
         if (f === "finalize") {
           const opt = $("[data-final-opt].on")?.dataset.finalOpt;
           if (!opt) return toast("Pick the option you chose");

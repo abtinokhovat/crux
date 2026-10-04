@@ -1,22 +1,22 @@
-# Share server behind Caddy (automatic HTTPS). Set your domain and secrets, then:
+# crux share server behind Caddy (automatic HTTPS). Set your domain and secrets, then:
 #   docker compose up -d
 services:
-  adr:
-    build: ..
+  crux:
+    image: ghcr.io/abtinokhovat/crux:latest   # or: build: ..
     restart: unless-stopped
     environment:
-      ADR_TOKENS: "abtinokhovat:CHANGE-ME-long-random-token"   # handle:token, comma-separated for more owners
-      ADR_PASSCODE: "CHANGE-ME-team-passcode"                    # teammates enter this once per browser
-      ADR_PUBLIC_URL: "https://adr.example.com"
+      CRUX_TOKENS: "abtinokhovat:CHANGE-ME-long-random-token"   # handle:token, comma-separated for more owners
+      CRUX_PASSCODE: "CHANGE-ME-team-passcode"                   # teammates enter this once per browser
+      CRUX_PUBLIC_URL: "https://crux.example.com"
     volumes:
-      - adr-data:/data
+      - crux-data:/data
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     ports: ["80:80", "443:443"]
-    command: caddy reverse-proxy --from adr.example.com --to adr:8080
+    command: caddy reverse-proxy --from crux.example.com --to crux:8080
     volumes:
       - caddy-data:/data
 volumes:
-  adr-data:
+  crux-data:
   caddy-data:

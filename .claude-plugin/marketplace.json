@@ -1,12 +1,16 @@
 {
-  "name": "adr-kit",
-  "owner": { "name": "Abtin Okhovat" },
-  "metadata": { "description": "Skills for recording and visualizing architecture decisions." },
+  "name": "crux",
+  "owner": {
+    "name": "Abtin Okhovat"
+  },
+  "metadata": {
+    "description": "Skills for recording, reviewing and using architecture decisions."
+  },
   "plugins": [
     {
-      "name": "adr-kit",
+      "name": "crux",
       "source": "./",
-      "description": "adr skill (write / backfill / review ADRs with the adr CLI) + answer-me-with-html (visual explainer pages; also the renderer used by the app).",
+      "description": "crux skill (enrich / digest / finalize ADRs, check decisions before coding) + answer-me-with-html (visual explainer pages; also the renderer crux uses).",
       "version": "0.1.0"
     }
   ]

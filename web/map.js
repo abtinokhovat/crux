@@ -3,6 +3,7 @@
 // dashed group frames, and a zoom that grows out of the box you open.
 // Each level shows the children of one node; a leaf (or a node's own band) shows its ADRs.
 import { $, S, esc, gist, href, label, pill, statusLabel, svgEl, tagChip, wrapText } from "./util.js";
+import { md } from "./vendor/crux-render.js";
 
 const NW = 200, NH = 70, GX = 120, GY = 46;
 const AW = 250, AH = 92;
@@ -15,7 +16,7 @@ export function renderMap(root, nodeId, q) {
   const arch = S.site.architecture;
   if (!arch) {
     root.innerHTML = `<div class="ak-page-head"><div><h1>Architecture</h1><p>No architecture map yet.</p></div></div>
-<section class="am-panel"><header class="am-panel-head"><span class="am-panel-id">?</span><h2>Create architecture.yaml</h2></header><div class="am-panel-body am-md"><p>Path is set by <code>architecture</code> in adr.config.yaml:</p>
+<section class="am-panel"><header class="am-panel-head"><span class="am-panel-id">?</span><h2>Create architecture.yaml</h2></header><div class="am-panel-body am-md"><p>Path is set by <code>architecture</code> in crux.config.yaml:</p>
 <pre class="am-code"><code>title: Platform
 nodes:
   - id: messaging
@@ -575,7 +576,7 @@ function nodeDetail(n, isSelection) {
   const kids = n.children.map((c) => arch.nodes[c]).filter(Boolean);
   return `<div class="kind">${esc(n.tag ?? n.kind)}${n.parent ? ` · in ${esc(arch.nodes[n.parent]?.label ?? n.parent)}` : ""}</div><h3>${esc(n.label)}</h3>
 ${n.sub ? `<p class="muted" style="margin:0 0 8px">${esc(n.sub)}</p>` : ""}
-${n.descHtml ? `<div class="am-md">${n.descHtml}</div>` : ""}
+${n.desc ? `<div class="am-md">${md(n.desc)}</div>` : ""}
 ${n.tags.length ? `<div class="ak-chips" style="margin-top:10px">${n.tags.map((t) => tagChip(t)).join("")}</div>` : ""}
 ${kids.length ? `<p class="m-contains"><b>Contains</b> ${kids.length}: ${kids.slice(0, 5).map((k) => esc(k.label)).join(", ")}${kids.length > 5 ? ` +${kids.length - 5}` : ""}</p>` : ""}
 ${isSelection && drillable(n) ? `<p style="margin:12px 0 0"><button class="ak-btn" type="button" data-zoom="${esc(n.id)}">${n.children.length ? "Zoom in ›" : "Show decisions ›"}</button> <span class="muted" style="font-size:12px">or click the box again</span></p>` : ""}
@@ -590,7 +591,7 @@ function ghostDetail(n) {
   for (let p = arch.nodes[n.parent]; p; p = arch.nodes[p.parent]) where.unshift(p.label);
   return `<div class="kind">${esc(n.tag ?? n.kind)} · outside this level</div><h3>${esc(n.label)}</h3>
 <p class="muted" style="margin:0 0 8px">${where.length ? `In ${esc(where.join(" / "))}` : "Top level"}${n.sub ? ` · ${esc(n.sub)}` : ""}</p>
-${n.descHtml ? `<div class="am-md">${n.descHtml}</div>` : ""}
+${n.desc ? `<div class="am-md">${md(n.desc)}</div>` : ""}
 <p style="margin:12px 0 0"><button class="ak-btn" type="button" data-goto="${esc(n.parent ?? "")}" data-sel="${esc(n.id)}">Go to ${esc(n.label)} ›</button></p>
 ${n.deep.length ? `<div class="ak-mini-label" style="margin-top:16px">Decisions · ${n.deep.length}</div>${cardsFor(n.deep)}` : ""}`;
 }

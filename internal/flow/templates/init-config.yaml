@@ -1,0 +1,13 @@
+# crux config — https://github.com/abtinokhovat/crux
+title: {{name}} decisions
+dir: docs/adr                         # ADR markdown files: NNNN-kebab-title.md
+architecture: docs/adr/architecture.yaml
+components: .crux/components          # project components: *.mjs exporting { name, render }
+template: .crux/template.md           # used by "crux new" (falls back to the built-in one)
+docs: []                              # extra markdown folders to index, e.g. [docs/design, docs/research]
+prefix: ADR
+# share: https://crux.example.com     # share server for meeting notes and team review (crux login <url> --token …)
+# statuses:                           # add or recolor statuses (ok|info|warn|err|mute|purple|#hex)
+#   piloting: { label: Piloting, color: purple, order: 3 }
+# tags:
+#   kafka: { desc: Event log and streaming }

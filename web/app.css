@@ -544,7 +544,8 @@ a.ak-ref:hover { background: var(--st); color: var(--paper); }
 .ak-btn--primary:hover { background: #2b2f37; }
 .ak-btn--green { background: var(--ak-green); border-color: var(--ak-green); color: #fff; }
 .ak-btn--green:hover { background: #196532; }
-.ak-priv { display: inline-flex; align-items: center; gap: 6px; font: 600 11px var(--font-mono); padding: 4px 8px; border: 1.5px solid; letter-spacing: 0.02em; }
+/* same box as .ak-pill--lg so the two chips line up */
+.ak-priv { display: inline-flex; align-items: center; gap: 6px; font: 600 13px/1 var(--font-mono); padding: 7px 11px; border: 1px solid; letter-spacing: 0.03em; white-space: nowrap; }
 .ak-priv--local { color: var(--ak-purple); background: var(--ak-purple-bg); }
 .ak-priv--notes { color: var(--warn); background: var(--warn-bg); }
 .ak-priv--shared { color: var(--accent); background: var(--accent-bg); }

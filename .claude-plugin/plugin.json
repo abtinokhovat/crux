@@ -1,7 +1,15 @@
 {
-  "name": "adr-kit",
+  "name": "crux",
   "version": "0.1.0",
-  "description": "AI-driven Architecture Decision Records: write, backfill and visualize decisions (graph, architecture drill-down, tags, search) from markdown in your repo.",
-  "author": { "name": "Abtin Okhovat" },
-  "keywords": ["adr", "architecture", "decisions", "documentation"]
+  "description": "Decisions your team and your agents can see: capture a question, enrich it with your Claude, review it with the team, finalize it, and let agents check decisions before changing code.",
+  "author": {
+    "name": "Abtin Okhovat"
+  },
+  "homepage": "https://github.com/abtinokhovat/crux",
+  "keywords": [
+    "adr",
+    "architecture",
+    "decisions",
+    "documentation"
+  ]
 }

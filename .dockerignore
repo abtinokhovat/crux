@@ -1,7 +1,6 @@
 node_modules
 example
-prototypes
-test
+dist
 .git
-*.md
-!skills/**/*.md
+web-src
+scripts

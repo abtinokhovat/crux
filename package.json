@@ -1,41 +1,14 @@
 {
-  "name": "adr-kit",
-  "version": "0.1.0",
-  "description": "AI-driven, visual Architecture Decision Records: markdown in your repo, a connected graph, architecture drill-down, tags, search and custom components.",
+  "name": "crux-web",
+  "private": true,
+  "description": "Build tooling for the crux browser renderer (web/vendor/crux-render.js). The crux binary itself is Go.",
   "type": "module",
-  "bin": {
-    "adr": "bin/adr.mjs"
-  },
-  "files": [
-    "bin",
-    "deploy",
-    "src",
-    "web",
-    "templates",
-    "skills",
-    ".claude-plugin"
-  ],
-  "engines": {
-    "node": ">=20"
-  },
   "scripts": {
-    "dev": "node bin/adr.mjs serve --root example",
-    "test": "node bin/adr.mjs lint --root example"
+    "build:web": "node scripts/build-web.mjs"
   },
-  "license": "MIT",
-  "dependencies": {
+  "devDependencies": {
     "highlight.js": "^11.12.0",
-    "yaml": "^2.9.1"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/abtinokhovat/adr-kit"
-  },
-  "keywords": [
-    "adr",
-    "architecture-decision-records",
-    "documentation",
-    "claude-code",
-    "visualization"
-  ]
+    "yaml": "^2.9.1",
+    "esbuild": "^0.25.12"
+  }
 }

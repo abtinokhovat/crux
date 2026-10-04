@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en" data-theme="blueprint">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decision</title>
+<link rel="stylesheet" href="/assets/app.css">
+<link rel="stylesheet" href="/assets/share.css">
+</head>
+<body>
+{{.Body}}
+<div class="ak-toast" id="toast"></div>
+{{if .Script}}<script type="module" src="/assets/{{.Script}}"></script>{{end}}
+</body>
+</html>

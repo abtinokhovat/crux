@@ -1,0 +1,34 @@
+crux — decisions your team and your agents can see
+
+Usage  crux <command> [options]
+
+Browse
+  serve                 Run the app with live reload            [--port 4321] [--host] [--open]
+  build [-o dist/adr]   Export a static site (GitHub Pages, S3, nginx)
+  list / show <id> / search <words>                              [--json]
+  graph [--json|--mermaid] · tags · components · next
+
+Decision flow    capture → enrich (your Claude) → shape → share → team review → finalize
+  q <question>          Capture a question as a private Draft   [--notes] [-c "what we know"] [--due D]
+  notes <id>            Open it for meeting notes on the share server  [--close] [--import]
+  share <id>            Publish for team review (re-run to update)     [--close]
+  pull <id>             Team input → .crux/reviews/<id>.md for you and your Claude
+  finalize <id>         Accept an option: decision, verdicts, dissent  --option C [--decision "…"] [--reopen "a; b"]
+  link <a> <rel> <b>    Link two ADRs, both sides (relates, supersedes, depends_on, amends)
+  context [paths|terms] What is decided here — for agents             [--json]
+
+Project
+  init                  crux.config.yaml, docs/adr, architecture map, template, example component
+  new <title>           A full ADR from the template            [--open] [--tags a,b] [--components x] [--status S]
+  lint                  Check references, statuses, components, missing decisions
+  index                 Rewrite the index table in <dir>/README.md
+  skill install         Copy the Claude skills into .claude/skills/ of this project
+
+Share server
+  server                Run it (Docker-friendly)                 [--port 8080] [--data ./data]
+                        env: CRUX_TOKENS="handle:token,…" CRUX_PASSCODE CRUX_PUBLIC_URL
+  login <url>           Store your owner token                   --token T
+  me [handle]           Show or set your handle
+
+Global   --root <dir>   Project root (default: nearest folder with crux.config.yaml)
+         --version
