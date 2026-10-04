@@ -48,6 +48,7 @@ export function statusKey(status = "") {
   const s = String(status).trim().toLowerCase();
   if (!s) return "proposed";
   if (s.startsWith("superseded")) return "superseded";
+  if (s.startsWith("in review") || s === "review") return "review";
   return s.split(/\s+/)[0];
 }
 

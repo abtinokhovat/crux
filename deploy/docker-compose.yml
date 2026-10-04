@@ -1,0 +1,22 @@
+# Share server behind Caddy (automatic HTTPS). Set your domain and secrets, then:
+#   docker compose up -d
+services:
+  adr:
+    build: ..
+    restart: unless-stopped
+    environment:
+      ADR_TOKENS: "abtinokhovat:CHANGE-ME-long-random-token"   # handle:token, comma-separated for more owners
+      ADR_PASSCODE: "CHANGE-ME-team-passcode"                    # teammates enter this once per browser
+      ADR_PUBLIC_URL: "https://adr.example.com"
+    volumes:
+      - adr-data:/data
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    command: caddy reverse-proxy --from adr.example.com --to adr:8080
+    volumes:
+      - caddy-data:/data
+volumes:
+  adr-data:
+  caddy-data:

@@ -1,3 +1,3 @@
-import { adrCards, compare, decision, options, proscons, stats, tradeoff } from "./decision.mjs";
+import { adrCards, compare, decision, options, proscons, scenarios, stats, tradeoff } from "./decision.mjs";
 
-export const BUILTIN = [decision, options, compare, proscons, tradeoff, stats, adrCards];
+export const BUILTIN = [decision, options, compare, scenarios, proscons, tradeoff, stats, adrCards];

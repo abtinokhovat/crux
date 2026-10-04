@@ -67,6 +67,10 @@ function readAdr(file, cfg) {
     statusKey: statusKey(status),
     date: meta.date ? String(meta.date instanceof Date ? meta.date.toISOString().slice(0, 10) : meta.date) : "",
     author: meta.author ?? meta.authors ?? "",
+    owner: meta.owner ?? "",
+    due: meta.due ? String(meta.due) : "",
+    reopen: asList(meta.reopen_when),
+    applies: asList(meta.applies_to),
     tags: asList(meta.tags).map((t) => t.toLowerCase()),
     components: asList(meta.components ?? meta.component),
     rel,
@@ -145,6 +149,8 @@ function loadArchitecture(cfg, adrs, problems) {
         children: (n.children ?? []).map((c) => String(c.id)),
         adrs: asList(n.adrs).map((x) => refId(x, cfg.digits)),
         docs: asList(n.docs),
+        // Code paths this component owns (globs) — lets `adr context <path>` find its decisions.
+        paths: asList(n.paths),
         at: n.at ?? null,
         // Optional manual geometry (pixels), like a hand-drawn map: x, y, w, h. Tag overrides the kind label.
         x: n.x ?? null, y: n.y ?? null, w: n.w ?? null, h: n.h ?? null,
@@ -235,7 +241,8 @@ export function loadStore(cfg) {
         if (!known.has(t)) continue;
         const [from, to, kind] = type === "superseded_by" ? [t, a.id, "supersedes"] : [a.id, t, type];
         const k = `${from}>${to}>${kind}`;
-        if (seen.has(k)) continue;
+        // "relates" is symmetric and written on both sides; keep one edge.
+        if (seen.has(k) || (kind === "relates" && seen.has(`${to}>${from}>relates`))) continue;
         seen.add(k);
         seen.add(pair(from, to));
         edges.push({ from, to, type: kind });

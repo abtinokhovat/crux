@@ -8,6 +8,7 @@
   },
   "files": [
     "bin",
+    "deploy",
     "src",
     "web",
     "templates",
@@ -19,7 +20,7 @@
   },
   "scripts": {
     "dev": "node bin/adr.mjs serve --root example",
-    "test": "node --test test/*.test.mjs"
+    "test": "node bin/adr.mjs lint --root example"
   },
   "license": "MIT",
   "dependencies": {

@@ -32,6 +32,21 @@ ${C.b("Commands")}
   next                  Print the next free ADR number
   skill install         Copy the bundled Claude skills into .claude/skills/ of this project
 
+${C.b("Decision flow")}  capture → enrich (your Claude) → shape → share → team review → finalize
+  q <question>          Capture a question as a private Draft  [--notes] [-c "what we know"] [--due D]
+  notes <id>            Open the question for meeting notes on the share server  [--close] [--import]
+  share <id>            Publish the ADR for team review (re-run to update)  [--close]
+  pull <id>             Bring team input into .adr/reviews/<id>.md for you and your Claude
+  finalize <id>         Accept an option: decision callout, verdicts, dissent  --option C [--decision "…"] [--reopen "a; b"]
+  link <a> <rel> <b>    Link two ADRs, both sides (relates, supersedes, depends_on, amends)
+  context [paths|terms] What is decided for these paths/topics — for agents  [--json]
+
+${C.b("Share server")}
+  server                Run the share server (Docker-friendly)  [--port 8080] [--data ./data]
+                        env: ADR_TOKENS="handle:token,…" ADR_PASSCODE ADR_PUBLIC_URL
+  login <url>           Store your owner token for a share server  --token T
+  me [handle]           Show or set your handle (default: share-server login)
+
 ${C.b("Global")}
   --root <dir>          Project root (default: nearest folder with adr.config.yaml, else cwd)
 `;
@@ -46,6 +61,9 @@ const { values: opt, positionals: pos } = parseArgs({
     out: { type: "string", short: "o" }, tags: { type: "string" }, components: { type: "string" }, status: { type: "string" },
     author: { type: "string" }, tag: { type: "string" }, json: { type: "boolean" }, mermaid: { type: "boolean" },
     force: { type: "boolean" }, help: { type: "boolean", short: "h" },
+    notes: { type: "boolean" }, context: { type: "string", short: "c" }, due: { type: "string" }, close: { type: "boolean" },
+    import: { type: "boolean" }, option: { type: "string" }, decision: { type: "string" }, reopen: { type: "string" },
+    token: { type: "string" }, data: { type: "string" },
   },
 });
 
@@ -60,6 +78,12 @@ async function store(cfg) {
   await loadProjectComponents(cfg);
   const { loadStore } = await import("../src/store.mjs");
   return loadStore(cfg);
+}
+function getAdr(cfg, s, raw) {
+  const id = String(raw ?? "").replace(/\D/g, "").padStart(cfg.digits, "0");
+  const a = s.byId.get(id);
+  if (!a) throw new Error(`No ${cfg.prefix}-${id || "?"}. Run "adr list".`);
+  return a;
 }
 const out = (data) => process.stdout.write(typeof data === "string" ? data + "\n" : JSON.stringify(data, null, 2) + "\n");
 const pad = (s, n) => (String(s).length > n ? String(s).slice(0, n - 1) + "…" : String(s).padEnd(n));
@@ -88,6 +112,7 @@ components: .adr/components           # project components: *.mjs exporting { na
 template: .adr/template.md            # used by "adr new" (falls back to the built-in one)
 docs: []                              # extra markdown folders to index, e.g. [docs/design, docs/research]
 prefix: ADR
+# share: https://adr.example.com     # share server for meeting notes and team review (adr login <url> --token …)
 # statuses:                           # add or recolor statuses (ok|info|warn|err|mute|purple|#hex)
 #   piloting: { label: Piloting, color: purple, order: 2 }
 # tags:
@@ -319,6 +344,148 @@ Run \`npx adr serve\` to browse them visually (graph, architecture map, search).
     for (const p of proj.filter((p) => p.error)) out(C.r(`${p.name}: ${p.summary}`));
   },
 
+  async q() {
+    const cfg = project();
+    const question = pos.join(" ").trim();
+    if (!question) return fail('adr q "Which broker do we use for v1?"');
+    const { createDraft } = await import("../src/flow.mjs");
+    const r = createDraft(cfg, await store(cfg), { question, notes: opt.context ?? "", due: opt.due ?? "" });
+    out(`${C.g("✓")} ${cfg.prefix}-${r.id} draft  ${C.d(r.file)}  ${C.d("(private — only on your laptop)")}`);
+    if (opt.notes) {
+      const { openNotes } = await import("../src/share/client.mjs");
+      const item = await openNotes(cfg, getAdr(cfg, await store(cfg), r.id));
+      out(`${C.y("◐")} open for notes: ${C.b(item.url)}`);
+    } else out(C.d(`Next: enrich it with your Claude (/adr enrich ${r.id}), or "adr notes ${r.id}" to collect notes from the room.`));
+  },
+
+  async notes() {
+    const cfg = project();
+    const s = await store(cfg);
+    const adr = getAdr(cfg, s, pos[0]);
+    const share = await import("../src/share/client.mjs");
+    if (opt.import) {
+      const item = await share.fetchItem(cfg, adr);
+      if (!item) return fail(`ADR-${adr.id} has no notes on the share server`);
+      const { importNotes } = await import("../src/flow.mjs");
+      const n = importNotes(cfg, adr, item.entries.filter((e) => e.kind === "note"));
+      return out(`${C.g("✓")} ${n} note(s) added to "## Notes" in ${adr.file}`);
+    }
+    if (opt.close) {
+      await share.setMode(cfg, adr, "closed");
+      return out(`${C.g("✓")} notes closed for ADR-${adr.id}`);
+    }
+    const item = await share.openNotes(cfg, adr);
+    out(`${C.y("◐")} ADR-${adr.id} open for notes — share this link in the room:\n  ${C.b(item.url)}\n${C.d("Teammates see the question and your notes so far; nothing else from your draft.")}`);
+  },
+
+  async share() {
+    const cfg = project();
+    const s = await store(cfg);
+    const adr = getAdr(cfg, s, pos[0]);
+    const share = await import("../src/share/client.mjs");
+    if (opt.close) {
+      await share.setMode(cfg, adr, "closed");
+      return out(`${C.g("✓")} review closed for ADR-${adr.id}`);
+    }
+    const { setStatus } = await import("../src/flow.mjs");
+    if (["draft", "open", "proposed"].includes(adr.statusKey)) setStatus(cfg, adr, "In review");
+    const fresh = getAdr(cfg, await store(cfg), adr.id);
+    const item = await share.shareReview(cfg, await store(cfg), fresh);
+    const q = item.snapshot?.questions ?? [];
+    out(`${C.c("◉")} ADR-${adr.id} shared for review (v${item.versions ?? 1}):\n  ${C.b(item.url)}${q.length ? `\n  asks: ${q.map((x) => (x.to ? "@" + x.to : "anyone")).join(", ")}` : ""}\n${C.d("Re-run after edits to update what reviewers see. Their input stays.")}`);
+  },
+
+  async pull() {
+    const cfg = project();
+    const s = await store(cfg);
+    const adr = getAdr(cfg, s, pos[0]);
+    const share = await import("../src/share/client.mjs");
+    const item = await share.fetchItem(cfg, adr);
+    if (!item) return fail(`ADR-${adr.id} is not shared. Run "adr share ${adr.id}" or "adr notes ${adr.id}".`);
+    const file = share.writeDigest(cfg, adr, item);
+    if (opt.json) return out(item);
+    const k = (x) => item.entries.filter((e) => e.kind === x).length;
+    out(`${C.g("✓")} ${item.entries.length} entries → ${C.b(file.replace(cfg.root + "/", ""))}\n  picks ${k("pick")} · pros ${k("pro")} · cons ${k("con")} · answers ${k("answer")} · comments ${k("comment")} · notes ${k("note")}\n${C.d(`Ask your Claude: /adr digest ${adr.id}`)}`);
+  },
+
+  async finalize() {
+    const cfg = project();
+    const s = await store(cfg);
+    const adr = getAdr(cfg, s, pos[0]);
+    if (!opt.option) return fail(`adr finalize ${adr.id} --option C [--decision "…"]`);
+    const share = await import("../src/share/client.mjs");
+    let dissent = [];
+    let item = null;
+    try {
+      item = await share.fetchItem(cfg, adr);
+    } catch (err) {
+      process.stderr.write(C.y(`! share server: ${err.message} — finalizing without team picks\n`));
+    }
+    if (item) dissent = item.entries.filter((e) => e.kind === "pick" && e.opt !== opt.option).map((e) => ({ by: e.by, opt: e.opt, why: e.text }));
+    const { finalize } = await import("../src/flow.mjs");
+    const decision = opt.decision ?? adr.facts.recommendation ?? `Chose option ${opt.option}.`;
+    finalize(cfg, adr, { option: opt.option, decision, dissent, reopen: (opt.reopen ?? "").split(";").map((x) => x.trim()).filter(Boolean) });
+    if (item) await share.publishFinal(cfg, await store(cfg), getAdr(cfg, await store(cfg), adr.id), { option: opt.option, decision });
+    out(`${C.g("✓")} ADR-${adr.id} accepted (option ${opt.option})${dissent.length ? ` · ${dissent.length} dissent recorded` : ""}${item ? " · reviewers see the decision" : ""}\n${C.d(`Edited ${adr.file}. Commit it when you are ready.`)}`);
+  },
+
+  async link() {
+    const cfg = project();
+    const [a, rel, b] = pos;
+    if (!b) return fail("adr link 0020 relates 0004");
+    const { link } = await import("../src/flow.mjs");
+    const changed = link(cfg, await store(cfg), a, rel, b);
+    out(changed.length ? `${C.g("✓")} ${changed.join(", ")}` : C.d("already linked"));
+  },
+
+  async context() {
+    const cfg = project({ needConfig: false });
+    const { context } = await import("../src/flow.mjs");
+    const list = context(cfg, await store(cfg), pos);
+    if (opt.json) return out(list);
+    if (!list.length) return out(C.d("No recorded decisions match. If you are about to make one, capture it: adr q \"…?\""));
+    for (const d of list) {
+      out(`${C.b(`${cfg.prefix}-${d.id}`)} ${d.binding ? C.g("ACCEPTED") : C.y(d.status.toUpperCase())} ${C.b(d.title)}${d.matched.length ? C.d(`  (${d.matched.join(", ")})`) : ""}`);
+      if (d.decision) out(`  decided: ${d.decision}`);
+      if (d.leaning) out(`  leaning: ${d.leaning}`);
+      if (d.question && !d.leaning) out(`  open question: ${d.question}`);
+      if (d.rejected.length) out(`  rejected: ${d.rejected.map((r) => r.name + (r.why ? ` — ${r.why}` : "")).join(" · ")}`);
+      if (d.reopen_when.length) out(`  reopen when: ${d.reopen_when.join(" · ")}`);
+      if (d.links.length) out(C.d(`  links: ${d.links.join(", ")}`));
+      out(C.d(`  ${d.file}`));
+    }
+  },
+
+  async server() {
+    const { startShareServer } = await import("../src/share/server.mjs");
+    const r = await startShareServer({
+      port: Number(opt.port ?? process.env.PORT ?? 8080), host: opt.host ?? process.env.HOST ?? "0.0.0.0", data: opt.data ?? process.env.ADR_DATA ?? "./data",
+      tokens: process.env.ADR_TOKENS ?? "", passcode: process.env.ADR_PASSCODE ?? "", publicUrl: process.env.ADR_PUBLIC_URL ?? "",
+    });
+    out(`${C.g("●")} share server ${C.b(r.url)} · owners: ${r.owners.join(", ") || C.y("none (set ADR_TOKENS)")} · passcode: ${process.env.ADR_PASSCODE ? "on" : C.y("off")}`);
+  },
+
+  async login() {
+    const url = (pos[0] ?? "").replace(/\/$/, "");
+    if (!url || !opt.token) return fail("adr login https://adr.example.com --token <token>");
+    const { whoami } = await import("../src/share/client.mjs");
+    const handle = await whoami(url, opt.token);
+    const { loadUser, saveUser } = await import("../src/config.mjs");
+    const u = loadUser();
+    u.servers = { ...(u.servers ?? {}), [url]: { token: opt.token, handle } };
+    u.me ??= handle;
+    saveUser(u);
+    const cfg = project({ needConfig: false });
+    out(`${C.g("✓")} logged in to ${url} as @${handle}${cfg.share?.replace(/\/$/, "") === url ? "" : `\n${C.d(`Add to adr.config.yaml:  share: ${url}`)}`}`);
+  },
+
+  async me() {
+    const { loadUser, saveUser } = await import("../src/config.mjs");
+    const u = loadUser();
+    if (pos[0]) { u.me = pos[0].replace(/^@/, ""); saveUser(u); }
+    out(u.me ? `@${u.me}` : C.d('not set — run "adr me <handle>" or "adr login"'));
+  },
+
   async skill() {
     if (pos[0] !== "install") return fail("adr skill install");
     const cfg = project({ needConfig: false });
@@ -342,5 +509,9 @@ if (opt.help || !commands[cmd]) {
   if (!commands[cmd]) fail(`unknown command "${cmd}"`);
   out(HELP);
 } else {
-  await commands[cmd]();
+  try {
+    await commands[cmd]();
+  } catch (err) {
+    fail(err.message);
+  }
 }

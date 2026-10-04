@@ -1,0 +1,7 @@
+node_modules
+example
+prototypes
+test
+.git
+*.md
+!skills/**/*.md

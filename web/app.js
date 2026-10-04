@@ -4,6 +4,7 @@ import { renderGraph } from "./graph.js";
 import { renderMap } from "./map.js";
 import { openSearch, search } from "./search.js";
 import { archTree, areaBars, history, panel, register, sheet, statusCell, titleBlock } from "./blueprint.js";
+import { bindFlow, finalizeHtml, flowStrip, openNewQuestion, privacy, sharePanel, shareOf, teamHtml } from "./flow.js";
 
 const view = $("#view");
 let cleanup = null;
@@ -17,6 +18,7 @@ async function loadSite() {
   $("#brand-title").textContent = site.title;
   $("#nav-count").textContent = site.adrs.length;
   injectStatusCss(site.statuses);
+  $("#new-q")?.classList.toggle("hidden", !site.local);
   return site;
 }
 
@@ -81,7 +83,7 @@ function home() {
   const { adrs, docs, tags, problems } = S.site;
   const order = statusOrder();
   const counts = Object.fromEntries(order.map((k) => [k, adrs.filter((a) => a.statusKey === k).length]));
-  const open = adrs.filter((a) => a.statusKey === "open");
+  const open = adrs.filter((a) => ["draft", "open", "review"].includes(a.statusKey)).sort((a, b) => ["review", "open", "draft"].indexOf(a.statusKey) - ["review", "open", "draft"].indexOf(b.statusKey));
   const qs = open.reduce((n, a) => n + (a.facts.questions?.length ?? 0), 0);
 
   const kpis = [`<a class="ak-kpi ak-kpi--total" href="#/list"><div class="ak-kpi-v">${adrs.length}</div><div class="ak-kpi-l">Decisions</div></a>`]
@@ -96,7 +98,7 @@ function home() {
         .map((a) => {
           const g = gist(a);
           const n = a.facts.questions.length;
-          return `<a class="ak-need ak-st-${a.statusKey}" href="${href(a)}"><div class="ak-need-top"><span class="mono">${esc(label(a))}</span>${n ? `<span class="ak-qcount">${n} question${n > 1 ? "s" : ""}</span>` : ""}</div><h3>${esc(a.title)}</h3><p>${g.kind === "recommendation" ? "<b>Leaning:</b> " : ""}${esc(g.text)}</p></a>`;
+          return `<a class="ak-need ak-st-${a.statusKey}" href="${href(a)}"><div class="ak-need-top"><span class="mono">${esc(label(a))}</span>${a.statusKey !== "open" ? pill(a) : ""}${a.due ? `<span class="mono dim" style="font-size:11px">due ${esc(a.due)}</span>` : ""}${n ? `<span class="ak-qcount">${n} question${n > 1 ? "s" : ""}</span>` : ""}</div><h3>${esc(a.title)}</h3><p>${g.kind === "recommendation" ? "<b>Leaning:</b> " : ""}${esc(g.text)}</p></a>`;
         })
         .join("") + (open.length > 6 ? `<a class="ak-more" href="#/list?status=open">+${open.length - 6} more open decisions →</a>` : "")
     : `<div class="ak-empty">No open questions. Every decision has an owner.</div>`;
@@ -236,7 +238,8 @@ function glance(a) {
   const rows = [];
   if (os.items.length) {
     const nm = (o) => esc(o.key ? `${o.key} — ${o.name}` : o.name);
-    rows.push(`<div><dt>Options · ${os.items.length}</dt><dd>${os.ok.map((o) => `<div class="ok">✓ ${nm(o)}</div>`).join("")}${os.warn.map((o) => `<div class="warn">~ ${nm(o)}</div>`).join("")}${os.no.map((o) => `<div class="no">✗ ${nm(o)}</div>`).join("")}</dd></div>`);
+    const undecided = ["draft", "open", "review"].includes(a.statusKey);
+    rows.push(`<div><dt>Options · ${os.items.length}${undecided ? " · undecided" : ""}</dt><dd>${os.ok.map((o) => `<div class="ok">${undecided ? "→ leaning:" : "✓"} ${nm(o)}</div>`).join("")}${os.warn.map((o) => `<div class="warn">~ ${nm(o)}</div>`).join("")}${os.no.map((o) => `<div class="no">✗ ${nm(o)}</div>`).join("")}</dd></div>`);
   }
   if (a.facts.questions?.length) rows.push(`<div><dt>Open questions</dt><dd><a href="#${location.hash.slice(1).split("#")[0]}" data-jump="questions">${a.facts.questions.length} need an answer →</a></dd></div>`);
   if (a.components.length) rows.push(`<div><dt>Architecture</dt><dd>${a.components.map((c) => `<div class="ak-crumbs">${ancestors(c).map((n) => `<a href="#/map/${encodeURIComponent(n.parent ?? "")}?sel=${encodeURIComponent(n.id)}">${esc(n.label)}</a>`).join("<i>›</i>")}</div>`).join("")}</dd></div>`);
@@ -263,27 +266,32 @@ async function docPage(id, q) {
     [
       { label: "Status", value: a.status || "Doc", html: statusCell(a) },
       { label: "Date", value: a.date },
-      { label: "Author", value: a.author ? String(a.author) : "" },
+      { label: a.owner ? "Owner" : "Author", value: a.owner ? `@${a.owner}` : a.author ? String(a.author) : "" },
+      { label: "Due", value: a.statusKey === "accepted" ? "" : a.due },
       { label: "Sheet", value: `${i + 1} of ${list.length}` },
       { label: "Tags", value: a.tags.length ? "x" : "", html: `<span class="ak-chips">${a.tags.map((t) => tagChip(t)).join("")}</span>`, span: 2 },
       { label: "Architecture", value: crumbs ? "x" : "", html: crumbs, span: 2 },
+      { label: "Reopen when", value: a.reopen?.length ? "x" : "", html: a.reopen?.map((r) => `<div>${esc(r)}</div>`).join(""), span: 2 },
+      { label: "Applies to", value: a.applies?.length ? "x" : "", html: a.applies?.map((r) => `<span class="mono" style="font-size:12px">${esc(r)}</span>`).join(" · "), span: 2 },
     ],
     4,
   );
   const html = `<article class="ak-st-${esc(a.statusKey)}">
 <header class="ak-adr-head ak-st-${esc(a.statusKey)}">
   <div class="ak-adr-actions"><button class="ak-btn ak-btn--ghost" type="button" data-grid title="Lay panels out on a grid using their span">${grid ? "▤ Doc" : "▦ Grid"}</button><a class="ak-btn ak-btn--ghost" href="${base}${showSource ? "" : "?source=1"}">${showSource ? "Rendered" : "Markdown"}</a><button class="ak-btn ak-btn--ghost" type="button" data-copy-text="${esc(a.file)}" title="Copy file path">⧉ ${esc(a.file.split("/").pop())}</button></div>
-  <div class="ak-adr-id"><span>${esc(label(a))}</span>${pill(a, true)}</div>
+  <div class="ak-adr-id"><span>${esc(label(a))}</span>${pill(a, true)}${privacy(a)}</div>
   <h1>${esc(a.title)}</h1>
   ${a.subtitle ? `<p class="ak-sub">${esc(a.subtitle)}</p>` : ""}
   ${block}
   ${relationsHtml(a)}
 </header>
+${flowStrip(a)}
 ${errors}
 ${sheet(`<div class="ak-adr-layout${grid ? " ak-adr-layout--grid" : ""}">
   <nav class="ak-toc" aria-label="Sections">${toc}</nav>
-  <div class="ak-body${grid ? " ak-body--grid" : ""}">${showSource ? `<figure class="ak-code"><figcaption><span>${esc(a.file)}</span><button class="ak-copy" data-copy>Copy</button></figcaption><pre class="ak-source"><code>${esc(doc.source)}</code></pre></figure>` : doc.html}</div>
+  <div class="ak-body${grid ? " ak-body--grid" : ""}"><div id="team-slot"></div>${showSource ? `<figure class="ak-code"><figcaption><span>${esc(a.file)}</span><button class="ak-copy" data-copy>Copy</button></figcaption><pre class="ak-source"><code>${esc(doc.source)}</code></pre></figure>` : doc.html}${showSource ? "" : finalizeHtml(a)}</div>
   <aside class="ak-rail">
+    ${sharePanel(a)}
     <section class="am-panel"><header class="am-panel-head"><span class="am-panel-id">i</span><h2>At a glance</h2></header><div class="am-panel-body">${glance(a)}</div></section>
     <section class="am-panel"><header class="am-panel-head"><span class="am-panel-id">↔</span><h2>Connections</h2><span class="am-panel-meta"><a href="#/graph?focus=${encodeURIComponent(a.id)}">graph →</a></span></header><div class="am-panel-body">${egoGraph(a)}</div></section>
   </aside>
@@ -312,9 +320,37 @@ ${sheet(`<div class="ak-adr-layout${grid ? " ak-adr-layout--grid" : ""}">
     for (const en of entries) if (en.isIntersecting) for (const l of $$(".ak-toc a")) l.classList.toggle("on", l.dataset.panel === en.target.id.replace("panel-", ""));
   }, { rootMargin: "-80px 0px -65% 0px" });
   $$(".ak-body .am-panel").forEach((p) => io.observe(p));
+  // Team input from the share server, refreshed while the page is open.
+  let timer = 0;
+  const loadTeam = async () => {
+    if (!S.site.local || !shareOf(a)) return;
+    try {
+      const data = await (await fetch(`api/team/${a.id}`, { cache: "no-store" })).json();
+      const slot = document.getElementById("team-slot");
+      if (!slot) return;
+      const active = document.activeElement;
+      if (!slot.contains(active)) slot.innerHTML = teamHtml(a, data);
+      const c = document.getElementById("team-count");
+      if (c && data.item) c.textContent = `${data.item.entries.length} entries`;
+      if (c && data.error) c.textContent = "server unreachable";
+    } catch {}
+    timer = setTimeout(loadTeam, 6000);
+  };
+  loadTeam();
+  const unbindFlow = bindFlow(a, async (full) => {
+    if (full) {
+      await loadSite();
+      await route({ keepScroll: true });
+    } else {
+      clearTimeout(timer);
+      loadTeam();
+    }
+  });
   cleanup = () => {
     io.disconnect();
     view.removeEventListener("click", onClick);
+    clearTimeout(timer);
+    unbindFlow();
   };
   return null;
 }
@@ -454,6 +490,7 @@ addEventListener("keydown", (e) => {
   }
 });
 $("#open-search").addEventListener("click", () => openSearch());
+$("#new-q").addEventListener("click", () => openNewQuestion());
 
 addEventListener("hashchange", () => {
   if (location.hash.startsWith("#panel-")) return;

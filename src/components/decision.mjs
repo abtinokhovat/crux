@@ -36,7 +36,7 @@ export const options = {
   cost: High             # any other key becomes a labeled field
 \`\`\``,
   example: "```options Broker\n- name: Kafka\n  verdict: ok\n  pros: [Replay, Ordering]\n  cons: [Ops cost]\n- name: RabbitMQ\n  verdict: no\n  cons: [No replay]\n```",
-  render(text, { args, ComponentError }) {
+  render(text, { args, ComponentError, ctx }) {
     let data;
     try {
       data = YAML.parse(text);
@@ -56,7 +56,7 @@ export const options = {
         }));
       return { key: o.key ?? null, name: String(o.name), topic: o.topic ?? null, verdict: { kind: verdict[0], label: verdict.slice(1).join(" ") }, fields };
     });
-    return optionCards(items, { title: args });
+    return optionCards(items, { title: args, decided: !["draft", "open", "review"].includes(ctx?.adr?.statusKey) });
   },
 };
 
@@ -178,5 +178,29 @@ export const adrCards = {
       return `<a class="ak-card ak-st-${a.statusKey}" href="#/adr/${id}" data-ref="${id}"><span class="ak-card-id">${esc(ctx.cfg.prefix)}-${id}</span><span class="ak-pill">${esc(a.status)}</span><strong>${esc(a.title)}</strong>${gist ? `<span class="ak-card-gist">${esc(gist)}</span>` : ""}${note ? `<em>${esc(note)}</em>` : ""}</a>`;
     });
     return `<div class="ak-cards">${cards.join("")}</div>`;
+  },
+};
+
+// What-if grid: rows are situations, columns are options; each cell ok / warn / bad + a note.
+export const scenarios = {
+  name: "scenarios",
+  summary: "What-if grid: situations × options with ✓ ! ✗ and a short note",
+  syntax: "```scenarios\nWhat happens if… | A | B | C\n10k open tabs | ok one hub | warn sticky LB | bad request storm\n```\n- Cell starts with ok, warn or bad (or ✓ ! ✗); the rest is the note.",
+  example: "```scenarios\nWhat happens if… | A | B\nDB outage 20 min | ok buffer holds | warn spool covers\n```",
+  render(text, { esc, mdInline, ComponentError }) {
+    const rows = lines(text).map((l) => ({ ...l, cells: l.t.replace(/^\||\|$/g, "").split("|").map((c) => c.trim()) })).filter((r) => !/^:?-{2,}/.test(r.cells[0]));
+    if (rows.length < 2) throw new ComponentError("scenarios needs a header row and at least one situation", 1);
+    const [head, ...body] = rows;
+    const KIND = { ok: "ok", "✓": "ok", warn: "warn", "!": "warn", bad: "bad", no: "bad", "✗": "bad" };
+    const MARK = { ok: "✓", warn: "!", bad: "✗" };
+    const cell = (c, line) => {
+      const m = c.match(/^(ok|warn|bad|no|✓|!|✗)\b\s*(.*)$/i);
+      if (!m) throw new ComponentError(`scenario cell must start with ok, warn or bad: "${c}"`, line);
+      const k = KIND[m[1].toLowerCase()];
+      return `<td class="ak-sc ak-sc--${k}"><b>${MARK[k]}</b>${m[2] ? `<span>${mdInline(m[2])}</span>` : ""}</td>`;
+    };
+    const totals = head.cells.slice(1).map((_, j) => body.reduce((s, r) => s + ({ ok: 2, warn: 1, bad: 0 }[KIND[(r.cells[j + 1] ?? "").split(/\s/)[0].toLowerCase()]] ?? 0), 0));
+    const best = Math.max(...totals);
+    return `<div class="am-table-wrap"><table class="ak-scen"><thead><tr><th>${esc(head.cells[0])}</th>${head.cells.slice(1).map((h, j) => `<th class="${totals[j] === best ? "ak-win" : ""}">${esc(h)}</th>`).join("")}</tr></thead><tbody>${body.map((r) => `<tr><th>${mdInline(r.cells[0])}</th>${r.cells.slice(1).map((c) => cell(c, r.line)).join("")}</tr>`).join("")}</tbody></table></div>`;
   },
 };

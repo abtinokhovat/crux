@@ -23,6 +23,65 @@ npx adr serve --open        # http://127.0.0.1:4321, live reload
 
 Try it on the bundled example: `npm run dev` (serves `example/`).
 
+## The decision flow
+
+```
+capture ──▶ enrich ──▶ shape ──▶ review ──▶ finalize ──▶ agents use it
+  you      your Claude    you       team        you       every agent
+```
+
+1. **Capture** — `adr q "Which broker do we use for v1?"` (or **＋ Question** in the app). A private
+   Draft with the question and rough notes. In a meeting: `adr q "…" --notes` or **Open for notes** —
+   the room gets a link, sees only the question, and adds notes you fold into the draft later.
+2. **Enrich** — in Claude Code: `/adr enrich 20`. Your Claude researches the code and other ADRs and
+   writes options, scenarios, questions for people, and the links (relates / depends on / supersedes,
+   tags, components, `applies_to`). Its blocks show as “from your Claude” with **Keep / Drop**.
+3. **Shape** — edit, set your leaning, assign `- @handle: question` lines. Still private.
+4. **Review** — `adr share 20` (or **Share for review**). Teammates open the link and pick an option
+   with confidence, add pros/cons (a reason is required), answer the questions for them, comment.
+   You see it live on the ADR page and reply (Agree / Added / Noted / Reply). `adr pull 20` +
+   `/adr digest 20` lets your Claude summarize and draft edits.
+5. **Finalize** — the Finalize panel or `adr finalize 20 --option C --decision "…" --reopen "…"`:
+   decision callout, verdicts, dissent from differing picks, reopen triggers, status Accepted;
+   reviewers see the decision. **You commit** — adr-kit never touches git.
+6. **Agents use it** — `adr context services/inbox kafka` tells any agent what is decided, what was
+   rejected and why, and when to reopen. The `adr` skill makes Claude check it before changing code.
+
+Your Claude is personal: it works on your files and never posts to the team.
+
+## Share server
+
+A small service for notes and reviews. Deploy it once for the team:
+
+```bash
+docker build -t adr-share .
+docker run -d -p 8080:8080 -v adr-data:/data \
+  -e ADR_TOKENS="abtinokhovat:<long-random-token>,sara-dev:<token>" \
+  -e ADR_PASSCODE="<team passcode>" \
+  -e ADR_PUBLIC_URL="https://adr.example.com" adr-share
+```
+
+Or `deploy/docker-compose.yml` (adr + Caddy with automatic HTTPS for your domain). Without Docker:
+`ADR_TOKENS=… adr server --port 8080`.
+
+- **Owners** (people who publish questions) have tokens in `ADR_TOKENS`. Generate with `openssl rand -hex 24`.
+- **Teammates** enter `ADR_PASSCODE` once per browser and their git handle; no accounts.
+- Data is one JSON file per question in `/data`. Back up the volume.
+
+Then on your laptop:
+
+```bash
+adr login https://adr.example.com --token <your token>   # stored in ~/.config/adr-kit/user.json
+```
+
+and in the project's `adr.config.yaml`:
+
+```yaml
+share: https://adr.example.com
+```
+
+Share links and pulled reviews live in `.adr/share.json` and `.adr/reviews/` (git-ignored for you).
+
 ## Commands
 
 | Command | What it does |
@@ -37,6 +96,14 @@ Try it on the bundled example: `npm run dev` (serves `example/`).
 | `adr graph [--json\|--mermaid]` | Prints the relation graph |
 | `adr tags`, `adr components`, `adr next` | Tag counts, available components, next free number |
 | `adr skill install` | Copies the bundled skills into `.claude/skills/` if you don't use the marketplace |
+| `adr q <question> [--notes] [-c notes] [--due]` | Captures a private Draft; `--notes` opens it for meeting notes |
+| `adr notes <id> [--close] [--import]` | Opens for notes / closes / imports notes into `## Notes` |
+| `adr share <id> [--close]` | Publishes (or updates) the ADR for team review |
+| `adr pull <id>` | Writes team input to `.adr/reviews/<id>.md` for you and your Claude |
+| `adr finalize <id> --option X [--decision] [--reopen "a; b"]` | Accepts an option, records dissent and triggers |
+| `adr link <a> <rel> <b>` | Links two ADRs on both sides |
+| `adr context [paths…] [terms…] [--json]` | What is decided here — for agents |
+| `adr server` · `adr login <url> --token` · `adr me` | Share server and your identity |
 
 ## Writing ADRs the app can read
 
@@ -150,7 +217,7 @@ This repo is both a plugin and a marketplace:
 /plugin install adr-kit@adr-kit
 ```
 
-- `skills/adr`: records, backfills (from the code and git history), supersedes and reviews ADRs with the CLI.
+- `skills/adr`: your personal side of the flow — `/adr enrich`, `/adr digest`, `/adr finalize`, link upkeep, and checking `adr context` before changing code. It never posts to the team and never runs git.
 - `skills/answer-me-with-html`: visual explainer pages. Its `scripts/am.mjs` is also the app's renderer (`src/am.mjs` re-exports it). Changes you make to its components or themes show up in the app.
 
 Edit the skills here and reinstall or update the plugin to pick up your changes.
@@ -159,10 +226,13 @@ Edit the skills here and reinstall or update the plugin to pick up your changes.
 
 ```
 bin/adr.mjs            CLI
-src/                   config, parse (facts from panels), store (index, graph, architecture), render, server, build
-src/components/        decision components (decision, options, compare, proscons, tradeoff, stats, adr)
-web/                   the SPA (vanilla JS, no build step): overview, list, ADR page, map, graph, tags, search
-templates/             ADR templates and the example component
+src/                   config, parse (facts from panels), store (index, graph, architecture), render,
+                       edit (safe markdown edits), flow (capture, link, finalize, context), server (local app)
+src/share/             share server (server.mjs), the page teammates open (page.mjs), client used by CLI + app
+src/components/        decision components (decision, options, compare, scenarios, proscons, tradeoff, stats, adr)
+web/                   the local app (vanilla JS, no build step): overview, list, ADR page + flow, map, graph, tags, search
+templates/             ADR templates (full, open question, draft) and the example component
 skills/                Claude skills (plugin root: .claude-plugin/)
-example/               demo project used by `npm run dev` and the tests
+deploy/                docker-compose with Caddy for the share server; Dockerfile at the root
+example/               demo project used by `npm run dev`
 ```

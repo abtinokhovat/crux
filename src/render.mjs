@@ -101,6 +101,8 @@ export const listComponents = () =>
     return { name: c.name, summary: en ? en[0] : c.summary, origin: c.origin ?? "answer-me-with-html", syntax: en ? en[1] : c.syntax, example: c.example };
   });
 
+const UNDECIDED = new Set(["draft", "open", "review"]);
+
 // ── panel enhancers ──────────────────────────────────────────────────
 // One render context per page so diagram ids (SVG markers) stay unique.
 let rctx = { seq: 0, stats: { components: {} } };
@@ -164,7 +166,7 @@ function enhancePanel(p, adr) {
           done = true;
           const [before, after] = splitAroundTable(b.text);
           if (before.trim()) out.push(`<div class="am-md">${md(before)}</div>`);
-          out.push(optionCards(opts));
+          out.push(optionCards(opts, { decided: !UNDECIDED.has(adr?.statusKey) }));
           out.push(`<details class="ak-raw"><summary>Show as table</summary><div class="am-md">${md(labelVerdicts(tableText(b.text)))}</div></details>`);
           if (after.trim()) out.push(`<div class="am-md">${md(after)}</div>`);
           continue;
@@ -276,7 +278,8 @@ function escapeBlocks(blocks) {
 }
 
 // ── public ───────────────────────────────────────────────────────────
-export function renderAdr(adr, store, cfg) {
+// forShare: the snapshot reviewers see — no local-only controls, no "from Claude" marks.
+export function renderAdr(adr, store, cfg, { forShare = false } = {}) {
   ctx.adr = adr;
   ctx.store = store;
   ctx.cfg = cfg;
@@ -294,10 +297,11 @@ export function renderAdr(adr, store, cfg) {
       errors.push({ panel: p.title, message: err.message, line: (err.line ?? 0) + parsed.bodyLine });
       body = `<div class="ak-error"><b>Render error</b> in “${esc(p.title)}”: ${esc(err.message)}${err.example ? `<pre>${esc(err.example)}</pre>` : ""}</div>`;
     }
-    const cls = /^(decision|question|recommend)/i.test(p.title) ? " ak-panel--hero" : "";
+    const claude = !forShare && p.attrs.from === "claude";
+    const cls = (/^(decision|question|recommend)/i.test(p.title) ? " ak-panel--hero" : "") + (claude ? " ak-panel--claude" : "");
     const span = Math.max(1, Math.min(Number(p.attrs.span) || 3, 3));
     return `<section class="am-panel ak-panel${cls}" id="panel-${esc(p.id)}" data-title="${esc(p.title)}" data-span="${span}"${Number(p.attrs.rows) > 1 ? ` data-rows="${Number(p.attrs.rows)}"` : ""}>
-<header class="am-panel-head"><span class="am-panel-id">${esc(p.id)}</span><h2>${esc(p.title)}</h2>${(p.attrs.meta || autoMeta(p)) ? `<span class="am-panel-meta">${esc(p.attrs.meta || autoMeta(p))}</span>` : ""}</header>
+<header class="am-panel-head"><span class="am-panel-id">${esc(p.id)}</span><h2>${esc(p.title)}</h2>${(p.attrs.meta || autoMeta(p)) && !claude ? `<span class="am-panel-meta">${esc(p.attrs.meta || autoMeta(p))}</span>` : ""}${claude ? `<span class="ak-claude-bar">FROM YOUR CLAUDE <button type="button" data-keep="${esc(p.title)}">Keep</button><button type="button" class="drop" data-drop="${esc(p.title)}">Drop</button></span>` : ""}</header>
 <div class="am-panel-body">${body}</div>
 </section>`;
   });
