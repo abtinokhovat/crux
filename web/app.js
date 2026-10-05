@@ -573,22 +573,10 @@ function setupSequencePlayers() {
   const get = (fig) => {
     let s = state.get(fig);
     if (!s) {
-      s = { fig, all: [...fig.querySelectorAll(".ak-sq-step")], steps: [], choice: {}, k: 0, timer: 0, raf: 0, speed: 1.5, playing: false, user: false, passes: 0, peek: null };
+      s = { fig, steps: [...fig.querySelectorAll(".ak-sq-step")], k: 0, timer: 0, raf: 0, speed: 1.5, playing: false, user: false, passes: 0, peek: null };
       state.set(fig, s);
-      scenario(s);
     }
     return s;
-  };
-  // What-if branches: only steps outside alt blocks, or in the chosen branch, play. The progress
-  // bar is rebuilt to match; the other branches stay visible but faded.
-  const scenario = (s) => {
-    const on = (g) => g.dataset.blk == null || Number(g.dataset.br) === (s.choice[g.dataset.blk] ?? 0);
-    s.steps = s.all.filter(on);
-    s.all.forEach((g) => { g.classList.toggle("is-off", !on(g)); g.classList.remove("is-done", "is-current", "is-future"); });
-    s.fig.querySelectorAll(".ak-sq-branch").forEach((b) => b.classList.toggle("is-on", Number(b.dataset.br) === (s.choice[b.dataset.blk] ?? 0)));
-    s.fig.querySelectorAll("[data-sq-blk]").forEach((c) => c.classList.toggle("on", Number(c.dataset.sqBr) === (s.choice[c.dataset.sqBlk] ?? 0)));
-    const segs = s.fig.querySelector(".ak-sq-segs");
-    if (segs) segs.innerHTML = s.steps.map((_, i) => `<button type="button" class="ak-sq-seg" data-sq-seg="${i + 1}" aria-label="Step ${i + 1}"><i></i></button>`).join("");
   };
   const render = (s) => {
     const n = s.steps.length;
@@ -703,7 +691,7 @@ function setupSequencePlayers() {
     const seg = el.closest("[data-sq-seg]");
     if (seg) return Number(seg.dataset.sqSeg);
     const g = el.closest(".ak-sq-step");
-    return g ? s.steps.indexOf(g) + 1 : 0;
+    return g ? Number(g.dataset.step) + 1 : 0;
   };
   const jump = (s, k) => {
     s.user = true;
@@ -715,16 +703,6 @@ function setupSequencePlayers() {
     const fig = ev.target.closest("[data-sq-player]");
     if (!fig) return;
     const s = get(fig);
-    const sc = ev.target.closest("[data-sq-blk]");
-    if (sc) {
-      s.choice[sc.dataset.sqBlk] = Number(sc.dataset.sqBr);
-      scenario(s);
-      s.peek = null;
-      s.user = true;
-      s.k = 1;
-      s.passes = 0;
-      return setPlaying(s, true);
-    }
     const at = stepAt(s, ev.target);
     if (at) {
       s.peek = null;
@@ -736,7 +714,7 @@ function setupSequencePlayers() {
     const b = ev.target.closest("[data-sq]");
     if (b?.dataset.sq === "play") { s.user = true; setPlaying(s, !s.playing); }
     else if (b?.dataset.sq === "map") {
-      // Hand the active scenario's messages to the map and open the level that holds all of them.
+      // Hand the messages to the map and open the level that holds all of them.
       const steps = s.steps.filter((g) => g.dataset.kind === "msg").map((g) => ({ from: g.dataset.from, to: g.dataset.to, fromNode: g.dataset.fromNode, toNode: g.dataset.toNode, label: g.dataset.label }));
       // Pick the map level where the most messages join two different boxes: a node inside the
       // level shows as its child box there, a node outside as its own (outside) box. Ties → deeper.
@@ -814,192 +792,6 @@ function setupSequencePlayers() {
   watch(document);
 }
 
-// ── tree case walks ──────────────────────────────────────
-// A case button lights its path node by node (root → outcome); the rest of the tree dims.
-// Clicking the active case again clears it.
-function setupTreeWalks() {
-  const reduce = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-  document.addEventListener("click", (ev) => {
-    const b = ev.target.closest(".ak-tw-case");
-    if (!b) return;
-    const box = b.closest("[data-tree-walk]");
-    clearTimeout(box._t);
-    box.querySelectorAll(".is-lit, .is-end").forEach((el) => el.classList.remove("is-lit", "is-end"));
-    const was = b.classList.contains("on");
-    box.querySelectorAll(".ak-tw-case").forEach((c) => c.classList.remove("on"));
-    box.classList.toggle("is-walking", !was);
-    if (was) return;
-    b.classList.add("on");
-    const ids = b.dataset.twPath.split(",");
-    const step = (i) => {
-      const el = box.querySelector(`[data-tn="${ids[i]}"]`);
-      el?.classList.add("is-lit");
-      if (i === ids.length - 1) return el?.classList.add("is-end");
-      box._t = setTimeout(() => step(i + 1), reduce() ? 0 : 380);
-    };
-    step(0);
-  });
-}
-
-// ── playlines ────────────────────────────────────────────
-// The playhead runs across the axis (about 7 s at 1×) when the figure is visible, twice, then
-// rests at the end. Passed events light up; the latest one is the caption. Click the track to seek.
-function setupPlaylines() {
-  const RUN_MS = 7000;
-  const reduce = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const state = new WeakMap();
-  const get = (fig) => {
-    let s = state.get(fig);
-    if (!s) state.set(fig, (s = { fig, lo: Number(fig.dataset.lo), hi: Number(fig.dataset.hi), v: Number(fig.dataset.lo), playing: false, passes: 0, user: false, raf: 0, shown: false }));
-    return s;
-  };
-  const draw = (s) => {
-    const { fig, lo, hi } = s;
-    const span = hi - lo || 1;
-    const live = s.playing || s.shown;
-    fig.classList.toggle("is-live", live);
-    fig.classList.toggle("is-paused", !s.playing);
-    fig.querySelector(".ak-pl-head").style.left = `${((s.v - lo) / span) * 100}%`;
-    const unit = fig.dataset.unit;
-    fig.querySelector(".ak-pl-now").textContent = `${Math.round(s.v * 10) / 10}${unit ? ` ${unit}` : ""}`;
-    let last = null;
-    fig.querySelectorAll("[data-pl-at]").forEach((el) => {
-      const passed = Number(el.dataset.plAt) <= s.v + 1e-9;
-      el.classList.toggle("is-passed", live && passed);
-      if (passed && el.matches(".ak-pl-ev") && (!last || Number(el.dataset.plAt) >= Number(last.dataset.plAt))) last = el;
-    });
-    fig.querySelectorAll(".ak-pl-ev").forEach((el) => el.classList.toggle("is-now", live && el === last));
-    fig.querySelector(".ak-pl-what").innerHTML = live && last ? `<span>${esc(last.dataset.plLabel)}${last.dataset.plNote ? ` · ${esc(last.dataset.plNote)}` : ""}</span>` : "&nbsp;";
-  };
-  const run = (s) => {
-    cancelAnimationFrame(s.raf);
-    if (!s.playing) return draw(s);
-    const span = s.hi - s.lo || 1;
-    let t0 = performance.now() - ((s.v - s.lo) / span) * RUN_MS;
-    const tick = (now) => {
-      if (!s.playing) return;
-      let f = (now - t0) / RUN_MS;
-      if (f >= 1) {
-        s.passes++;
-        if (s.passes >= 2) { s.v = s.hi; s.playing = false; s.shown = true; return draw(s); }
-        t0 = now + 1200; // short rest at the end, then again
-        f = 1;
-      }
-      s.v = s.lo + Math.max(0, f) * span;
-      draw(s);
-      s.raf = requestAnimationFrame(tick);
-    };
-    s.raf = requestAnimationFrame(tick);
-  };
-  const play = (s, on) => {
-    s.playing = on;
-    if (on && s.v >= s.hi) { s.v = s.lo; s.passes = 0; }
-    if (!on) s.shown = false;
-    run(s);
-  };
-  document.addEventListener("click", (ev) => {
-    const fig = ev.target.closest("[data-playline]");
-    if (!fig) return;
-    const s = get(fig);
-    if (ev.target.closest('[data-pl="play"]')) { s.user = true; return play(s, !s.playing); }
-    const track = ev.target.closest(".ak-pl-track");
-    if (track) {
-      const r = track.getBoundingClientRect();
-      s.user = true;
-      s.playing = false;
-      s.shown = true;
-      s.v = s.lo + Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * (s.hi - s.lo);
-      cancelAnimationFrame(s.raf);
-      draw(s);
-    }
-  });
-  const io = new IntersectionObserver((entries) => {
-    for (const en of entries) {
-      const s = get(en.target);
-      if (s.user || reduce()) continue;
-      if (en.isIntersecting && !s.playing && s.passes < 2) play(s, true);
-      else if (!en.isIntersecting && s.playing) { s.playing = false; cancelAnimationFrame(s.raf); draw(s); }
-    }
-  }, { threshold: 0.4 });
-  const watch = (root) => root.querySelectorAll?.("[data-playline]:not([data-pl-watched])").forEach((fig) => { fig.dataset.plWatched = ""; io.observe(fig); });
-  new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => n.nodeType === 1 && watch(n.parentNode ?? n)))).observe(document.body, { childList: true, subtree: true });
-  watch(document);
-}
-
-// ── queue simulations ────────────────────────────────────
-// Backlog over time for a burst of inflow against a steady outflow. Sliders recompute at once;
-// the curve draws itself in when the figure first comes into view.
-function setupSims() {
-  const NS = "http://www.w3.org/2000/svg";
-  const W = 720, H = 220, L = 56, R = 16, T = 14, B = 30;
-  const num = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}k` : `${Math.round(n)}`);
-  const dur = (s) => (!isFinite(s) ? "never" : s >= 172800 ? `${(s / 86400).toFixed(1)} d` : s >= 36000 ? `${Math.round(s / 3600)} h` : s >= 3600 ? `${(s / 3600).toFixed(1)} h` : s >= 60 ? `${Math.round(s / 60)} min` : `${Math.round(s)} s`);
-  const model = (d) => {
-    const g1 = d.peak / d.merge - d.out, g2 = d.base / d.merge - d.out;
-    const peak = Math.max(0, g1 * d.burst);
-    const drained = peak === 0 ? (g1 <= 0 ? 0 : Infinity) : g2 < 0 ? d.burst + peak / -g2 : Infinity;
-    const wait = peak / d.out;
-    const at = (t) => (t <= d.burst ? Math.max(0, g1 * t) : Math.max(0, peak + g2 * (t - d.burst)));
-    return { peak, drained, wait, at };
-  };
-  const draw = (fig, animate) => {
-    const d = fig._d;
-    const m = model(d);
-    const horizon = d.horizon ?? Math.min(7 * 86400, Math.max(d.burst * 1.6, isFinite(m.drained) ? m.drained * 1.12 : d.burst * 4, d.deadline && m.wait > 0 ? Math.min(d.deadline * 1.05, 7 * 86400) : 0));
-    const ymax = Math.max(1, m.peak * 1.12, m.at(horizon) * 1.12);
-    const x = (t) => L + (t / horizon) * (W - L - R), y = (v) => H - B - (v / ymax) * (H - T - B);
-    const pts = Array.from({ length: 121 }, (_, i) => (i / 120) * horizon).concat([d.burst]).sort((a, b) => a - b).map((t) => [x(t), y(m.at(t))]);
-    const ok = !d.deadline || (isFinite(m.drained) && m.wait <= d.deadline);
-    const ticksX = [0, 0.25, 0.5, 0.75, 1].map((f) => `<text x="${x(f * horizon)}" y="${H - 10}" text-anchor="middle">${dur(f * horizon)}</text>`).join("");
-    const ticksY = [0, 0.5, 1].map((f) => `<text x="${L - 8}" y="${y(f * ymax) + 4}" text-anchor="end">${num(f * ymax)}</text><line class="g" x1="${L}" x2="${W - R}" y1="${y(f * ymax)}" y2="${y(f * ymax)}"/>`).join("");
-    const dl = d.deadline && d.deadline <= horizon ? `<line class="dl" x1="${x(d.deadline)}" x2="${x(d.deadline)}" y1="${T}" y2="${H - B}"/><text class="dlt" x="${x(d.deadline) - 4}" y="${T + 10}" text-anchor="end">${d.deadlineLabel ?? "deadline"}</text>` : "";
-    const id = (fig._id ??= `sim${Math.random().toString(36).slice(2, 8)}`);
-    fig.querySelector(".ak-sim-chart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Backlog over time"><defs><clipPath id="${id}"><rect class="clip" x="0" y="0" width="${animate ? 0 : W}" height="${H}"/></clipPath></defs>
-${ticksY}<rect class="burst" x="${x(0)}" y="${T}" width="${x(Math.min(d.burst, horizon)) - x(0)}" height="${H - T - B}"/><text class="bt" x="${x(0) + 6}" y="${T + 12}">burst</text>${dl}
-<g clip-path="url(#${id})"><path class="area${ok ? "" : " bad"}" d="M${x(0)},${y(0)} ${pts.map((p) => `L${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ")} L${x(horizon)},${y(0)} Z"/><path class="line${ok ? "" : " bad"}" d="M${pts.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" L")}"/></g>
-<line class="axis" x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}"/>${ticksX}</svg>`;
-    fig.querySelector(".ak-sim-out").innerHTML = `<div><span>Peak backlog</span><b>${num(m.peak)}</b></div><div><span>Drained after</span><b>${dur(m.drained)}</b></div><div><span>Longest wait</span><b>${dur(m.wait)}</b></div>${d.deadline ? `<div class="${ok ? "ok" : "bad"}"><span>${d.deadlineLabel ?? "Deadline"} ${dur(d.deadline)}</span><b>${ok ? "fits" : "missed"}</b></div>` : ""}`;
-    for (const inp of fig.querySelectorAll("[data-sim-k]")) {
-      const k = inp.dataset.simK;
-      fig.querySelector(`[data-sim-v="${k}"]`).textContent = k === "burst" ? dur(d[k]) : k === "merge" ? d[k] : num(d[k]);
-    }
-    if (animate) {
-      const clip = fig.querySelector(".clip");
-      const t0 = performance.now();
-      const tick = (now) => {
-        const f = Math.min(1, (now - t0) / 2200);
-        clip.setAttribute("width", W * f);
-        if (f < 1) requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    }
-  };
-  const init = (fig) => {
-    if (fig._d) return;
-    try { fig._d = JSON.parse(fig.dataset.sim); } catch { return; }
-    draw(fig, false);
-  };
-  document.addEventListener("input", (ev) => {
-    const inp = ev.target.closest(".ak-sim [data-sim-k]");
-    if (!inp) return;
-    const fig = inp.closest(".ak-sim");
-    init(fig);
-    fig._d[inp.dataset.simK] = Number(inp.value);
-    draw(fig, false);
-  });
-  const io = new IntersectionObserver((entries) => {
-    for (const en of entries) {
-      if (!en.isIntersecting || en.target._shown) continue;
-      en.target._shown = true;
-      init(en.target);
-      draw(en.target, !matchMedia("(prefers-reduced-motion: reduce)").matches);
-    }
-  }, { threshold: 0.3 });
-  const watch = (root) => root.querySelectorAll?.(".ak-sim:not([data-sim-watched])").forEach((fig) => { fig.dataset.simWatched = ""; init(fig); io.observe(fig); });
-  new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => n.nodeType === 1 && watch(n.parentNode ?? n)))).observe(document.body, { childList: true, subtree: true });
-  watch(document);
-}
-
 // Map level that shows all components of a decision: their lowest common ancestor's level.
 function impactHref(a) {
   const paths = a.components.map((c) => ancestors(c).map((n) => n.id));
@@ -1073,8 +865,5 @@ const site = await loadSite();
 setupPopovers();
 setupCopy();
 setupSequencePlayers();
-setupTreeWalks();
-setupPlaylines();
-setupSims();
 setupLive(site);
 route();
