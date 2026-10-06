@@ -378,46 +378,62 @@ func (a *App) events(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// watch polls the project's markdown, YAML and components and reloads on change.
+// watch polls the project's markdown (every crux file anywhere, ADRs, docs), the map YAML,
+// the catalog and components, and reloads on change. Ignored and vendor folders are skipped.
 func (a *App) watch() {
 	sig := ""
+	watched := regexp.MustCompile(`\.(md|ya?ml|m?js|json)$`)
 	for {
 		var parts []string
-		roots := append([]string{a.cfg.Dir, a.cfg.Components, filepath.Dir(a.cfg.Architecture)}, a.cfg.Docs...)
-		for _, root := range roots {
-			_ = filepath.WalkDir(a.cfg.Abs(root), func(p string, e fs.DirEntry, err error) error {
-				if err != nil {
-					return nil
-				}
-				if e.IsDir() && e.Name() == "node_modules" {
-					return filepath.SkipDir
-				}
-				if !e.IsDir() && regexp.MustCompile(`\.(md|ya?ml|m?js|json)$`).MatchString(p) {
-					if st, err := e.Info(); err == nil {
-						parts = append(parts, fmt.Sprintf("%s:%d:%d", p, st.ModTime().UnixNano(), st.Size()))
+		a.mu.RLock()
+		cfg := a.cfg
+		a.mu.RUnlock()
+		add := func(p string, e fs.DirEntry) {
+			if st, err := e.Info(); err == nil {
+				parts = append(parts, fmt.Sprintf("%s:%d:%d", p, st.ModTime().UnixNano(), st.Size()))
+			}
+		}
+		if cfg.Scan.Off {
+			roots := append([]string{cfg.Dir, cfg.Components, filepath.Dir(cfg.Architecture)}, cfg.Docs...)
+			for _, root := range roots {
+				_ = filepath.WalkDir(cfg.Abs(root), func(p string, e fs.DirEntry, err error) error {
+					if err != nil {
+						return nil
 					}
+					if e.IsDir() && e.Name() == "node_modules" {
+						return filepath.SkipDir
+					}
+					if !e.IsDir() && watched.MatchString(p) {
+						add(p, e)
+					}
+					return nil
+				})
+			}
+		} else {
+			adr.WalkProject(cfg, adr.LoadIgnore(cfg), func(abs, rel string, e os.DirEntry) {
+				if strings.HasSuffix(abs, ".md") || strings.HasPrefix(rel, ".crux/") && watched.MatchString(abs) || abs == cfg.Abs(cfg.Architecture) || abs == cfg.Abs(cfg.Catalog) {
+					add(abs, e)
 				}
-				return nil
 			})
 		}
-		if a.cfg.File != "" {
-			if st, err := os.Stat(a.cfg.File); err == nil {
+		if cfg.File != "" {
+			if st, err := os.Stat(cfg.File); err == nil {
 				parts = append(parts, fmt.Sprint(st.ModTime().UnixNano()))
 			}
 		}
 		sort.Strings(parts)
 		next := strings.Join(parts, "|")
 		if sig != "" && next != sig {
-			if cfg, err := config.Load(a.cfg.Root); err == nil {
+			if c, err := config.Load(cfg.Root); err == nil {
 				a.mu.Lock()
-				a.cfg = cfg
+				a.cfg = c
 				a.mu.Unlock()
 			}
 			a.Reload()
 			a.broadcast()
 		}
 		sig = next
-		time.Sleep(700 * time.Millisecond)
+		time.Sleep(900 * time.Millisecond)
 	}
 }
 
