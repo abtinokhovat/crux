@@ -473,8 +473,11 @@ func Build(cfg *config.Config, out string) (int, error) {
 	}
 	n := 0
 	for id, d := range a.Store().ByID {
+		if d.Implied {
+			continue
+		}
 		b, _ := json.Marshal(docPayload(d))
-		if err := writeFile(filepath.Join(out, "api", "doc", id), b); err != nil {
+		if err := writeFile(filepath.Join(out, "api", "doc", StaticName(id)), b); err != nil {
 			return n, err
 		}
 		n++
@@ -487,4 +490,18 @@ func writeFile(p string, b []byte) error {
 		return err
 	}
 	return os.WriteFile(p, b, 0o644)
+}
+
+// StaticName is the file name of a doc in the static export: ids may hold ":" and "/"
+// (contracts), so anything outside [A-Za-z0-9._-] becomes _<hex>_. app.js mirrors it.
+func StaticName(id string) string {
+	var b strings.Builder
+	for _, r := range id {
+		if r < 128 && (r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-') {
+			b.WriteRune(r)
+			continue
+		}
+		fmt.Fprintf(&b, "_%x_", r)
+	}
+	return b.String()
 }

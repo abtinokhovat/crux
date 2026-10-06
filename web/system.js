@@ -68,7 +68,16 @@ const KIND_NAME = { system: "System", context: "Context", service: "Service", ap
 export const kindName = (k) => KIND_NAME[k] ?? k;
 const MODE_NAME = { sync: "sync call", async: "async event", stream: "stream", data: "data access", trigger: "trigger" };
 
-const mainTech = (e) => (e?.tech ?? [])[0];
+const CODE_KINDS = new Set(["service", "app", "job", "library", "module"]);
+const LANGLIKE = new Set(["language", "runtime", "framework", "protocol", "observability"]);
+// The tech that colors an element: infrastructure tech for infra; the first non-language tech
+// otherwise, else the language (code kinds keep a neutral frame in CSS either way).
+const mainTech = (e) => {
+  const ts = e?.tech ?? [];
+  if (!ts.length) return undefined;
+  if (CODE_KINDS.has(e.kind)) return ts[0];
+  return ts.find((t) => !LANGLIKE.has(techOf(t).category)) ?? ts[0];
+};
 const elName = (e) => (e.kind === "contract" ? e.name || e.title : e.title);
 
 // A chip for any element: kind glyph (or its main tech icon), name, colored by tech.

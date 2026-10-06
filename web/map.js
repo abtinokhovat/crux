@@ -701,7 +701,7 @@ function drawGroup(stage, grp, byId) {
 
 // Infra boxes carry their technology: a color (by tech, then by kind) and the name in the tag line.
 const techCls = (n) => (n.tech ? ` tech tech-${n.tech.replace(/[^a-z0-9-]/g, "")}` : "");
-const tagText = (n) => (n.tag ?? (n.tech ? `${n.kind} · ${techOf(n.tech).label ?? n.tech}` : String(n.kind))).toUpperCase();
+const tagText = (n) => { const t = n.tech || n.techs?.[0]; return (n.tag ?? (t ? `${n.kind} · ${techOf(t).label ?? t}` : String(n.kind))).toUpperCase(); };
 
 function drawNode(stage, it) {
   const n = it.node;
@@ -709,7 +709,7 @@ function drawNode(stage, it) {
   const g = svgEl("g", { class: `m-node k-${n.kind}${techCls(n)}${drill ? " drill" : ""}${n.origin === "inferred" ? " is-inferred" : ""}`, tabindex: 0, role: "button", "data-id": n.id, "aria-label": `${n.label}${drill ? ", zoomable" : ""}` }, stage);
   svgEl("rect", { class: "box", x: it.x, y: it.y, width: it.w, height: it.h }, g);
   if (/^(module|package|component)$/.test(n.kind)) svgEl("rect", { class: "modbar", x: it.x, y: it.y, width: 4, height: it.h }, g);
-  const icon = n.tech ? techPath(n.tech) : null;
+  const icon = n.tech ? techPath(n.tech) : n.techs?.length ? techPath(n.techs[0]) : null;
   if (icon) {
     const sv = svgEl("svg", { x: it.x + 7, y: it.y + 5, width: 11, height: 11, viewBox: "0 0 24 24" }, g);
     svgEl("path", { class: "ticon", d: icon }, sv);

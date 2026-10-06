@@ -22,6 +22,7 @@ categories:
   ai:            { label: AI provider, shape: card }
   protocol:      { label: Protocol, shape: card }
   client:        { label: Client, shape: card }
+  tool:          { label: Tool, shape: card }
 
 tech:
   # ── languages and runtimes ──
@@ -200,6 +201,15 @@ tech:
   openapi:  { label: OpenAPI, category: protocol, color: "#6BA539", icon: openapiinitiative }
   trpc:     { label: tRPC, category: protocol, color: "#2596BE", icon: trpc, detect: { npm: ["@trpc/server"] } }
   websocket: { label: WebSocket, category: protocol, color: "#4B5563", aliases: [ws], detect: { go: [github.com/gorilla/websocket, nhooyr.io/websocket, github.com/coder/websocket], npm: [ws, socket.io] } }
+
+  # ── tools and formats ──
+  git:      { label: Git, category: tool, color: "#F05032", icon: git }
+  github-actions: { label: GitHub Actions, category: tool, color: "#2088FF", icon: githubactions }
+  yaml:     { label: YAML, category: tool, color: "#CB171E", icon: yaml }
+  json:     { label: JSON, category: tool, color: "#4B5563", icon: json }
+  markdown: { label: Markdown, category: tool, color: "#1E1E1E", icon: markdown }
+  protobuf: { label: Protocol Buffers, category: tool, color: "#244C5A", aliases: [proto], detect: { go: [google.golang.org/protobuf], npm: [protobufjs, "@bufbuild/protobuf"] } }
+  bazel:    { label: Bazel, category: tool, color: "#43A047", icon: bazel }
 
 # How a connection is drawn. mode: sync | async | stream | data | trigger
 transports:

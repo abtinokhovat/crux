@@ -46,7 +46,9 @@ async function loadSite() {
 
 // The backend sends markdown; the page renders it with the same renderer reviewers use.
 async function loadDoc(id) {
-  if (!S.docCache.has(id)) S.docCache.set(id, fetch(`api/doc/${encodeURIComponent(id)}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)));
+  // The static export names files safely (internal/app StaticName): [A-Za-z0-9.-] stay, the rest is _<hex>_.
+  const file = S.site.static ? [...id].map((c) => (/[A-Za-z0-9.-]/.test(c) ? c : `_${c.codePointAt(0).toString(16)}_`)).join("") : encodeURIComponent(id);
+  if (!S.docCache.has(id)) S.docCache.set(id, fetch(`api/doc/${file}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)));
   const doc = await S.docCache.get(id);
   if (!doc) return null;
   const { html, errors } = renderAdr({ ...doc.meta, source: doc.source }, { byId: S.byId }, { prefix: S.site.prefix, digits: S.site.digits ?? 4, statuses: S.site.statuses, glossary: S.site.glossary, arch: S.site.architecture, site: S.site, byId: S.byId, techIcon });

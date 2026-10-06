@@ -1,0 +1,6 @@
+# crux describes itself: decisions in docs/adr, elements next to the code.
+title: crux
+dir: docs/adr
+prefix: ADR
+scan:
+  exclude: [example, internal/flow/templates, skills, web/vendor, node_modules]

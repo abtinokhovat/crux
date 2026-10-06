@@ -104,7 +104,8 @@ func (g *graph) hop(a, b string, async bool) bool {
 	if async {
 		return g.async[a+">"+b] || g.sync[a+">"+b]
 	}
-	return g.sync[a+">"+b] || g.async[a+">"+b]
+	// a sync hop back is the reply to a call the other way
+	return g.sync[a+">"+b] || g.sync[b+">"+a] || g.async[a+">"+b]
 }
 
 // connected in any direction or way (used where direction does not matter).

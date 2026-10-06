@@ -395,7 +395,10 @@ func ParseSteps(text string, cat *catalog.Catalog) []Step {
 			if tid, ok := cat.TransportID(f[0]); ok {
 				s.Transport = tid
 				s.Name = strings.TrimSpace(strings.TrimPrefix(label, f[0]))
-				if s.Name != "" {
+				// only interfaces between elements become contracts; data access, in-process
+				// calls and schedules stay labels
+				mode := cat.Mode(tid)
+				if s.Name != "" && tid != "call" && (mode == "sync" || mode == "async" || mode == "stream") {
 					if id, _, nm, ok := ContractID(cat, tid+":"+s.Name); ok {
 						s.Contract, s.Name = id, nm
 					}
@@ -403,7 +406,7 @@ func ParseSteps(text string, cat *catalog.Catalog) []Step {
 				if mode := cat.Mode(tid); mode == "async" || mode == "stream" {
 					s.Async = true
 				}
-			} else if id, tid, nm, ok := ContractID(cat, label); ok {
+			} else if id, tid, nm, ok := ContractID(cat, label); ok && tid != "call" && cat.Mode(tid) != "data" && cat.Mode(tid) != "trigger" {
 				s.Transport, s.Name, s.Contract = tid, nm, id
 				if cat.Mode(tid) == "async" {
 					s.Async = true
@@ -881,6 +884,24 @@ func inferParents(s *Store, res *resolver, cfg *config.Config) {
 			}
 			if dir == "." || dir == "/" || dir == "" {
 				break
+			}
+		}
+	}
+	// one system: it holds every top-level element that has no other place
+	var system *Doc
+	for _, d := range s.Elements {
+		if d.Kind == "system" {
+			if system != nil {
+				system = nil
+				break
+			}
+			system = d
+		}
+	}
+	if system != nil {
+		for _, d := range s.Elements {
+			if d != system && d.Parent == "" && IsStructural(d.Kind) {
+				d.Parent = system.ID
 			}
 		}
 	}

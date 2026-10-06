@@ -7,6 +7,8 @@ import (
 	"github.com/abtinokhovat/crux/internal/config"
 )
 
+var langLike = map[string]bool{"language": true, "runtime": true, "framework": true, "protocol": true, "observability": true}
+
 // mergeElements adds structural elements to the architecture map as boxes (nested by in:) and
 // their connections as edges. A node in architecture.yaml with the same id is enriched instead.
 func mergeElements(a *Architecture, s *Store, cfg *config.Config) *Architecture {
@@ -35,9 +37,19 @@ func mergeElements(a *Architecture, s *Store, cfg *config.Config) *Architecture 
 		if kind == "contract" {
 			kind = "topic"
 		}
+		// the box color comes from infrastructure tech (postgres, kafka, stripe…); code kinds
+		// stay neutral and show their language as an icon
 		tech := ""
-		if len(e.Tech) > 0 {
-			tech = e.Tech[0]
+		if !codeKinds[e.Kind] {
+			for _, t := range e.Tech {
+				if c := s.Catalog; c == nil || c.Tech[t] == nil || !langLike[c.Tech[t].Category] {
+					tech = t
+					break
+				}
+			}
+			if tech == "" && len(e.Tech) > 0 {
+				tech = e.Tech[0]
+			}
 		}
 		if n := a.Nodes[e.ID]; n != nil {
 			n.Doc = e.ID
