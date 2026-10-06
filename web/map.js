@@ -4,6 +4,7 @@
 // Each level shows the children of one node; a leaf (or a node's own band) shows its ADRs.
 import { $, S, esc, gist, href, label, pill, statusLabel, svgEl, tagChip, wrapText } from "./util.js";
 import { md } from "./vendor/crux-render.js";
+import { decisionsFor, elChip, flowsThrough, kindName, openQuestionsFor, techChip, techOf, techPath } from "./system.js";
 
 const NW = 200, NH = 70, GX = 170, GY = 56;
 const AW = 250, AH = 92, AGX = 120;
@@ -151,7 +152,7 @@ edges:
     }
     const it = selected && byId.get(selected);
     $("#m-detail").innerHTML = it?.ghost ? ghostDetail(it.ghost) : it?.adr ? adrDetail(it.adr) : isAdrLevel ? nodeDetail(node, false) : nodeDetail(selected ? arch.nodes[selected] : node, !!selected);
-    $("#m-in").disabled = !(it && (it.adr || it.ghost || drillable(it.node)));
+    $("#m-in").disabled = !(it && (it.adr || it.ghost || drillable(it.node) || it.node?.doc));
   };
 
   const go = (target, dir, from) => {
@@ -170,6 +171,7 @@ edges:
     if (it?.adr) return void (location.hash = href(it.adr).slice(1));
     if (it?.ghost) return go(it.ghost.parent ?? "", "out");
     if (it && drillable(it.node)) go(it.id, "in", it);
+    else if (it?.node?.doc) location.hash = `#/el/${encodeURIComponent(it.node.doc)}`;
   };
   const zoomOut = () => node && go(node.parent ?? "", "out");
 
@@ -259,9 +261,12 @@ function legend(isAdrLevel) {
   if (isAdrLevel) {
     return `<div class="ak-legend m-legend">${["open", "proposed", "accepted", "rejected", "superseded"].filter((k) => S.site.statuses[k]).map((k) => `<span><i class="m-key m-key--adr ak-st-${k}"></i>${esc(statusLabel(k))}</span>`).join("")}<span><i class="m-key m-key--line"></i>depends on / supersedes</span><span><i class="m-key m-key--dash"></i>relates / mentions</span></div>`;
   }
-  const techs = [...new Set(Object.values(S.site.architecture.nodes ?? {}).map((n) => n.tech).filter(Boolean))].sort();
-  const tech = techs.map((t) => `<span><i class="m-key m-key--tech tech-${esc(t.replace(/[^a-z0-9-]/g, ""))}"></i>${esc(t)}</span>`).join("");
-  return `<div class="ak-legend m-legend"><span><i class="m-key m-key--ctx"></i>Context (bounded context)</span><span><i class="m-key m-key--svc"></i>Service (deployable)</span><span><i class="m-key m-key--mod"></i>Module (code inside services)</span><span><i class="m-key m-key--ext"></i>External, store or topic</span><span><i class="m-key m-key--plan"></i>Planned</span>${tech}<span><b class="m-key m-key--cnt">3</b>Decisions inside</span></div>`;
+  const nodes = Object.values(S.site.architecture.nodes ?? {});
+  const techs = [...new Set(nodes.map((n) => n.tech).filter(Boolean))].sort();
+  const modes = new Set((S.site.architecture.edges ?? []).map((e) => e.mode).filter(Boolean));
+  const kinds = new Set(nodes.map((n) => n.kind));
+  const k = (cls, text, on = true) => (on ? `<span><i class="m-key ${cls}"></i>${text}</span>` : "");
+  return `<div class="ak-legend m-legend">${k("m-key--ctx", "Context", kinds.has("context") || kinds.has("domain"))}${k("m-key--svc", "Service", kinds.has("service") || kinds.has("binary"))}${k("m-key--mod", "Module", kinds.has("module") || kinds.has("package"))}${k("m-key--ext", "External, store or topic")}${k("m-key--plan", "Planned or inferred")}${k("m-key--sync", "sync call", modes.has("sync"))}${k("m-key--async", "async event", modes.has("async"))}${k("m-key--data", "data access", modes.has("data"))}${techs.map((t) => techChip(t)).join("")}<span><b class="m-key m-key--cnt">3</b>Decisions inside</span></div>`;
 }
 
 // ── items ────────────────────────────────────────────────
@@ -317,7 +322,7 @@ function ghostEdges(parent, items, max = 8) {
     const es = found.get(gid).edges;
     if (es.has(rk)) { es.get(rk).both = true; continue; }
     if (es.has(k)) { const x = es.get(k); if (e.label && !x.labels.includes(e.label)) x.labels.push(e.label); continue; }
-    es.set(k, { from, to, labels: e.label ? [e.label] : [], dashed: e.dashed, both: e.both, ghost: true });
+    es.set(k, { from, to, labels: e.label ? [e.label] : [], dashed: e.dashed, both: e.both, ghost: true, mode: e.mode, transport: e.transport });
   }
   const picked = [...found.entries()].sort((a, b) => b[1].edges.size - a[1].edges.size).slice(0, max);
   const out = { items: [], edges: [] };
@@ -353,12 +358,14 @@ function liftedEdges(items) {
     const prev = out.get(k);
     if (prev) {
       prev.both ||= e.both;
+      if (e.mode === "async") prev.mode = "async";
+      if (prev.transport !== e.transport) prev.transport = prev.mode === "data" ? prev.transport : "";
       prev.sel &&= !!e.sel;
       if (e.label && !prev.labels.includes(e.label)) prev.labels.push(e.label);
       continue;
     }
     // Layout hints (lp, lo) only make sense on the level the edge was written for.
-    out.set(k, { from, to, labels: e.label ? [e.label] : [], dashed: e.dashed, both: e.both, sel: !!e.sel, lp: exact ? e.lp : null, lo: exact ? e.lo : null });
+    out.set(k, { from, to, labels: e.label ? [e.label] : [], dashed: e.dashed, both: e.both, sel: !!e.sel, lp: exact ? e.lp : null, lo: exact ? e.lo : null, mode: e.mode, transport: e.transport });
   }
   return [...out.values()].map((e) => ({ ...e, label: e.labels.length > 2 ? `${e.labels.slice(0, 2).join(", ")} +${e.labels.length - 2}` : e.labels.join(", ") }));
 }
@@ -632,11 +639,12 @@ const dedupe = (pts) => pts.filter((p, i) => !i || Math.abs(p[0] - pts[i - 1][0]
 
 function drawEdge(layer, end) {
   const { e, pts } = end;
-  const attrs = { class: `m-edge${e.dashed ? " dashed" : ""}${e.sel ? " onsel" : ""}${e.type ? ` t-${e.type}` : ""}`, "data-from": e.from, "data-to": e.to };
+  const attrs = { class: `m-edge${e.dashed ? " dashed" : ""}${e.sel ? " onsel" : ""}${e.type ? ` t-${e.type}` : ""}${e.mode ? ` m-${e.mode}` : ""}`, "data-from": e.from, "data-to": e.to };
   const g = svgEl("g", attrs, layer);
   const path = svgEl("path", { d: pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ") }, g);
   if (!e.plain) path.setAttribute("marker-end", "url(#m-arr)");
   if (e.both) path.setAttribute("marker-start", "url(#m-arr)");
+  if (!e.label && e.transport && e.mode !== "data" && !e.ghost) e.label = e.transport;
   return e.label ? { e, pts, attrs } : null;
 }
 
@@ -649,7 +657,8 @@ function placeLabels(layer, pending, items) {
   const length = (pts) => pts.slice(1).reduce((a, p, i) => a + Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), 0);
   pending.sort((u, v) => length(u.pts) - length(v.pts));
   for (const { e, pts, attrs } of pending) {
-    const text = e.label.length > 34 ? e.label.slice(0, 33) + "…" : e.label;
+    const full = e.transport && e.mode !== "data" && !e.label.toLowerCase().startsWith(e.transport) ? `${e.transport} · ${e.label}` : e.label;
+    const text = full.length > 38 ? full.slice(0, 37) + "…" : full;
     const w = text.length * 5.9 + 10, h = 17;
     const [ox, oy] = e.lo ?? [0, 0];
     const segs = pts.slice(1).map((p, i) => ({ p1: pts[i], p2: p, len: Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]), flat: Math.abs(p[1] - pts[i][1]) < 0.5 }));
@@ -692,15 +701,26 @@ function drawGroup(stage, grp, byId) {
 
 // Infra boxes carry their technology: a color (by tech, then by kind) and the name in the tag line.
 const techCls = (n) => (n.tech ? ` tech tech-${n.tech.replace(/[^a-z0-9-]/g, "")}` : "");
-const tagText = (n) => (n.tag ?? (n.tech ? `${n.kind} · ${n.tech}` : String(n.kind))).toUpperCase();
+const tagText = (n) => (n.tag ?? (n.tech ? `${n.kind} · ${techOf(n.tech).label ?? n.tech}` : String(n.kind))).toUpperCase();
 
 function drawNode(stage, it) {
   const n = it.node;
   const drill = drillable(n);
-  const g = svgEl("g", { class: `m-node k-${n.kind}${techCls(n)}${drill ? " drill" : ""}`, tabindex: 0, role: "button", "data-id": n.id, "aria-label": `${n.label}${drill ? ", zoomable" : ""}` }, stage);
+  const g = svgEl("g", { class: `m-node k-${n.kind}${techCls(n)}${drill ? " drill" : ""}${n.origin === "inferred" ? " is-inferred" : ""}`, tabindex: 0, role: "button", "data-id": n.id, "aria-label": `${n.label}${drill ? ", zoomable" : ""}` }, stage);
   svgEl("rect", { class: "box", x: it.x, y: it.y, width: it.w, height: it.h }, g);
   if (/^(module|package|component)$/.test(n.kind)) svgEl("rect", { class: "modbar", x: it.x, y: it.y, width: 4, height: it.h }, g);
-  svgEl("text", { class: "tag", x: it.x + 8, y: it.y + 14 }, g).textContent = tagText(n);
+  const icon = n.tech ? techPath(n.tech) : null;
+  if (icon) {
+    const sv = svgEl("svg", { x: it.x + 7, y: it.y + 5, width: 11, height: 11, viewBox: "0 0 24 24" }, g);
+    svgEl("path", { class: "ticon", d: icon }, sv);
+  }
+  svgEl("text", { class: "tag", x: it.x + (icon ? 22 : 8), y: it.y + 14 }, g).textContent = tagText(n);
+  const oq = n.doc ? openQuestionsFor(n.doc).length : 0;
+  if (oq) {
+    const b = svgEl("g", { class: "qbadge" }, g);
+    svgEl("circle", { cx: it.x + it.w - (n.deep.length ? 30 : 9), cy: it.y + 9, r: 7 }, b);
+    svgEl("text", { x: it.x + it.w - (n.deep.length ? 30 : 9), y: it.y + 12.5, "text-anchor": "middle" }, b).textContent = "?";
+  }
   it.labelLines.forEach((l, i) => (svgEl("text", { class: "label", x: it.x + 8, y: it.y + 32 + i * 17 }, g).textContent = l));
   const top = it.y + 32 + it.labelLines.length * 17 - 1;
   it.lines.forEach((l, i) => (svgEl("text", { class: "sub", x: it.x + 8, y: top + i * 14 }, g).textContent = l));
@@ -763,7 +783,9 @@ function nodeDetail(n, isSelection) {
   const direct = n.adrs;
   const inside = n.deep.filter((id) => !direct.includes(id));
   const kids = n.children.map((c) => arch.nodes[c]).filter(Boolean);
-  return `<div class="kind">${esc(n.tag ?? n.kind)}${n.parent ? ` · in ${esc(arch.nodes[n.parent]?.label ?? n.parent)}` : ""}</div><h3>${esc(n.label)}</h3>
+  const el = n.doc ? S.byId.get(n.doc) : null;
+  const elHtml = el ? elementDetail(el) : "";
+  return `<div class="kind">${esc(n.tag ?? (el ? kindName(el.kind) : n.kind))}${n.parent ? ` · in ${esc(arch.nodes[n.parent]?.label ?? n.parent)}` : ""}</div><h3>${esc(n.label)}</h3>${elHtml}
 ${n.sub ? `<p class="muted" style="margin:0 0 8px">${esc(n.sub)}</p>` : ""}
 ${n.desc ? `<div class="am-md">${md(n.desc)}</div>` : ""}
 ${n.tags.length ? `<div class="ak-chips" style="margin-top:10px">${n.tags.map((t) => tagChip(t)).join("")}</div>` : ""}
@@ -881,4 +903,15 @@ function replayOnMap(root, stage, items, rp) {
   });
   show();
   return () => { clearTimeout(timer); cancelAnimationFrame(raf); };
+}
+
+// The element behind a map box: tech, interfaces at a glance, flows, questions, and a way in.
+function elementDetail(e) {
+  const fl = flowsThrough(e.id);
+  const oq = openQuestionsFor(e.id);
+  const dec = decisionsFor(e.id).length;
+  return `${e.tech?.length ? `<div class="ak-chips" style="margin:2px 0 8px">${e.tech.map(techChip).join("")}</div>` : ""}
+${fl.length ? `<div class="ak-mini-label" style="margin-top:10px">Flows · ${fl.length}</div><div class="ak-chips">${fl.map((f) => elChip(f)).join("")}</div>` : ""}
+${oq.length ? `<div class="ak-mini-label" style="margin-top:10px">Open questions · ${oq.length}</div><div class="ak-chips">${oq.map((q) => elChip(q)).join("")}</div>` : ""}
+<p style="margin:12px 0 0"><a class="ak-btn" href="#/el/${encodeURIComponent(e.id)}">Open ${esc(kindName(e.kind).toLowerCase())} page →</a>${dec ? ` <span class="muted" style="font-size:12px">${dec} decision${dec > 1 ? "s" : ""}</span>` : ""}</p>`;
 }

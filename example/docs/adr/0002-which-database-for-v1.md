@@ -5,7 +5,7 @@ status: Open
 date: 2026-10-02
 author: architect
 tags: [database, postgres]
-components: [postgres]
+components: [orders-db]
 ---
 
 ## Question {span=3}

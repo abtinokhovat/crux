@@ -79,6 +79,7 @@ func (a *App) Site(static bool) map[string]any {
 	return map[string]any{
 		"title": a.cfg.Title, "prefix": a.cfg.Prefix, "digits": a.cfg.Digits, "statuses": a.cfg.Statuses, "tagInfo": a.cfg.Tags, "glossary": a.cfg.Glossary,
 		"relations": adr.Relations, "adrs": s.Adrs, "docs": s.Docs, "edges": s.Edges, "tags": s.Tags, "architecture": s.Architecture,
+		"elements": s.Elements, "links": s.Links, "catalog": s.Catalog, "kinds": adr.Kinds, "edgeTypes": adr.EdgeTypes,
 		"problems": s.Problems, "projectComponents": a.projectComponents(), "static": static, "local": !static, "me": a.cfg.Me,
 		"share": map[string]any{"url": a.cfg.Share, "loggedIn": a.cfg.ShareToken != "", "items": share.LoadState(a.cfg)},
 	}

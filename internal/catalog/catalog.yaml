@@ -1,0 +1,215 @@
+# crux catalog: technologies, categories and transports. Every entry styles itself:
+# category → shape, tech → color + icon (Simple Icons slug, CC0), transport → edge style.
+# Projects extend or override entries in .crux/catalog.yaml (same shape).
+# detect: { go: [module prefixes], npm: [package names], image: [docker image names] }
+
+categories:
+  language:      { label: Language, shape: card }
+  runtime:       { label: Runtime, shape: card }
+  framework:     { label: Framework, shape: card }
+  store:         { label: Database, shape: cylinder }
+  kv:            { label: Key-value store, shape: cylinder }
+  search:        { label: Search, shape: cylinder }
+  blob:          { label: Object storage, shape: cylinder }
+  cache:         { label: Cache, shape: cylinder }
+  broker:        { label: Message broker, shape: pipe }
+  workflow:      { label: Workflow engine, shape: pipe }
+  gateway:       { label: Gateway / proxy, shape: card }
+  auth:          { label: Identity, shape: card }
+  observability: { label: Observability, shape: card }
+  cloud:         { label: Cloud / platform, shape: card }
+  saas:          { label: External service, shape: card }
+  ai:            { label: AI provider, shape: card }
+  protocol:      { label: Protocol, shape: card }
+  client:        { label: Client, shape: card }
+
+tech:
+  # ── languages and runtimes ──
+  go:          { label: Go, category: language, color: "#00ADD8", icon: go }
+  typescript:  { label: TypeScript, category: language, color: "#3178C6", icon: typescript, aliases: [ts], detect: { npm: [typescript] } }
+  javascript:  { label: JavaScript, category: language, color: "#C9A400", icon: javascript, aliases: [js] }
+  node:        { label: Node.js, category: runtime, color: "#5FA04E", icon: nodedotjs, aliases: [nodejs] }
+  deno:        { label: Deno, category: runtime, color: "#1E1E1E", icon: deno }
+  bun:         { label: Bun, category: runtime, color: "#3B3024", icon: bun }
+  python:      { label: Python, category: language, color: "#3776AB", icon: python }
+  java:        { label: Java, category: language, color: "#B07219", icon: openjdk }
+  kotlin:      { label: Kotlin, category: language, color: "#7F52FF", icon: kotlin }
+  rust:        { label: Rust, category: language, color: "#B7410E", icon: rust }
+  dotnet:      { label: .NET, category: runtime, color: "#512BD4", icon: dotnet, aliases: [csharp, "c#"] }
+  ruby:        { label: Ruby, category: language, color: "#CC342D", icon: ruby }
+  php:         { label: PHP, category: language, color: "#777BB4", icon: php }
+  elixir:      { label: Elixir, category: language, color: "#4B275F", icon: elixir }
+  scala:       { label: Scala, category: language, color: "#DC322F", icon: scala }
+  swift:       { label: Swift, category: language, color: "#F05138", icon: swift }
+  dart:        { label: Dart, category: language, color: "#0175C2", icon: dart }
+
+  # ── frameworks ──
+  react:        { label: React, category: framework, color: "#149ECA", icon: react, detect: { npm: [react] } }
+  nextjs:       { label: Next.js, category: framework, color: "#1E1E1E", icon: nextdotjs, aliases: [next], detect: { npm: [next] } }
+  vue:          { label: Vue, category: framework, color: "#42B883", icon: vuedotjs, detect: { npm: [vue] } }
+  nuxt:         { label: Nuxt, category: framework, color: "#00C58E", icon: nuxt, detect: { npm: [nuxt] } }
+  svelte:       { label: Svelte, category: framework, color: "#FF3E00", icon: svelte, detect: { npm: [svelte, "@sveltejs/kit"] } }
+  angular:      { label: Angular, category: framework, color: "#DD0031", icon: angular, detect: { npm: ["@angular/core"] } }
+  react-native: { label: React Native, category: framework, color: "#149ECA", icon: react, detect: { npm: [react-native] } }
+  flutter:      { label: Flutter, category: framework, color: "#02569B", icon: flutter }
+  express:      { label: Express, category: framework, color: "#353535", icon: express, detect: { npm: [express] } }
+  fastify:      { label: Fastify, category: framework, color: "#1E1E1E", icon: fastify, detect: { npm: [fastify] } }
+  nestjs:       { label: NestJS, category: framework, color: "#E0234E", icon: nestjs, aliases: [nest], detect: { npm: ["@nestjs/core"] } }
+  hono:         { label: Hono, category: framework, color: "#E36002", icon: hono, detect: { npm: [hono] } }
+  gin:          { label: Gin, category: framework, color: "#008ECF", icon: gin, detect: { go: [github.com/gin-gonic/gin] } }
+  echo:         { label: Echo, category: framework, color: "#00A8E8", detect: { go: [github.com/labstack/echo] } }
+  chi:          { label: chi, category: framework, color: "#4B5563", detect: { go: [github.com/go-chi/chi] } }
+  fiber:        { label: Fiber, category: framework, color: "#00ACD7", detect: { go: [github.com/gofiber/fiber] } }
+  spring:       { label: Spring, category: framework, color: "#6DB33F", icon: spring }
+  django:       { label: Django, category: framework, color: "#0C4B33", icon: django }
+  fastapi:      { label: FastAPI, category: framework, color: "#009688", icon: fastapi }
+  flask:        { label: Flask, category: framework, color: "#3B3B3B", icon: flask }
+  rails:        { label: Rails, category: framework, color: "#D30001", icon: rubyonrails }
+  laravel:      { label: Laravel, category: framework, color: "#FF2D20", icon: laravel }
+  prisma:       { label: Prisma, category: framework, color: "#2D3748", icon: prisma, detect: { npm: ["@prisma/client", prisma] } }
+  drizzle:      { label: Drizzle, category: framework, color: "#7A9A00", icon: drizzle, detect: { npm: [drizzle-orm] } }
+  gorm:         { label: GORM, category: framework, color: "#00ADD8", detect: { go: [gorm.io/gorm] } }
+  sqlc:         { label: sqlc, category: framework, color: "#00ADD8" }
+
+  # ── relational ──
+  postgres:    { label: PostgreSQL, category: store, color: "#336791", icon: postgresql, aliases: [postgresql, pg], detect: { go: [github.com/jackc/pgx, github.com/lib/pq], npm: [pg, postgres, "@neondatabase/serverless"], image: [postgres, postgis] } }
+  mysql:       { label: MySQL, category: store, color: "#4479A1", icon: mysql, detect: { go: [github.com/go-sql-driver/mysql], npm: [mysql, mysql2], image: [mysql] } }
+  mariadb:     { label: MariaDB, category: store, color: "#003545", icon: mariadb, detect: { npm: [mariadb], image: [mariadb] } }
+  sqlite:      { label: SQLite, category: store, color: "#0F80CC", icon: sqlite, detect: { go: [github.com/mattn/go-sqlite3, modernc.org/sqlite], npm: [better-sqlite3, sqlite3] } }
+  cockroachdb: { label: CockroachDB, category: store, color: "#6933FF", icon: cockroachlabs, detect: { image: [cockroachdb/cockroach] } }
+  sqlserver:   { label: SQL Server, category: store, color: "#CC2927", aliases: [mssql], detect: { npm: [mssql, tedious], image: [mcr.microsoft.com/mssql/server] } }
+  clickhouse:  { label: ClickHouse, category: store, color: "#C9A400", icon: clickhouse, detect: { go: [github.com/ClickHouse/clickhouse-go], npm: ["@clickhouse/client"], image: [clickhouse/clickhouse-server] } }
+  timescale:   { label: TimescaleDB, category: store, color: "#FDB515", icon: timescale, detect: { image: [timescale/timescaledb] } }
+  supabase:    { label: Supabase, category: store, color: "#3ECF8E", icon: supabase, detect: { npm: ["@supabase/supabase-js"] } }
+
+  # ── documents, key-value, wide column ──
+  mongodb:   { label: MongoDB, category: store, color: "#47A248", icon: mongodb, aliases: [mongo], detect: { go: [go.mongodb.org/mongo-driver], npm: [mongodb, mongoose], image: [mongo] } }
+  dynamodb:  { label: DynamoDB, category: kv, color: "#4053D6", icon: amazondynamodb, detect: { go: [github.com/aws/aws-sdk-go-v2/service/dynamodb], npm: ["@aws-sdk/client-dynamodb"] } }
+  cassandra: { label: Cassandra, category: store, color: "#1287B1", icon: apachecassandra, detect: { go: [github.com/gocql/gocql], npm: [cassandra-driver], image: [cassandra] } }
+  scylladb:  { label: ScyllaDB, category: store, color: "#53CADD", icon: scylladb, aliases: [scylla], detect: { image: [scylladb/scylla] } }
+  firestore: { label: Firestore, category: store, color: "#DD2C00", icon: firebase, detect: { npm: ["@google-cloud/firestore"] } }
+  etcd:      { label: etcd, category: kv, color: "#419EDA", icon: etcd, detect: { go: [go.etcd.io/etcd] } }
+
+  # ── cache ──
+  redis:     { label: Redis, category: cache, color: "#D82C20", icon: redis, detect: { go: [github.com/redis/go-redis, github.com/go-redis/redis, github.com/gomodule/redigo], npm: [redis, ioredis, "@upstash/redis"], image: [redis, redis/redis-stack] } }
+  valkey:    { label: Valkey, category: cache, color: "#2C5DA8", detect: { npm: [iovalkey], image: [valkey/valkey] } }
+  memcached: { label: Memcached, category: cache, color: "#2E8B57", detect: { go: [github.com/bradfitz/gomemcache], npm: [memcached], image: [memcached] } }
+  dragonfly: { label: Dragonfly, category: cache, color: "#7B3FE4", detect: { image: [docker.dragonflydb.io/dragonflydb/dragonfly] } }
+
+  # ── search and vectors ──
+  elasticsearch: { label: Elasticsearch, category: search, color: "#00857E", icon: elasticsearch, aliases: [elastic], detect: { go: [github.com/elastic/go-elasticsearch], npm: ["@elastic/elasticsearch"], image: [elasticsearch, docker.elastic.co/elasticsearch/elasticsearch] } }
+  opensearch:    { label: OpenSearch, category: search, color: "#005EB8", icon: opensearch, detect: { go: [github.com/opensearch-project/opensearch-go], npm: ["@opensearch-project/opensearch"], image: [opensearchproject/opensearch] } }
+  meilisearch:   { label: Meilisearch, category: search, color: "#FF5CAA", icon: meilisearch, detect: { npm: [meilisearch], image: [getmeili/meilisearch] } }
+  typesense:     { label: Typesense, category: search, color: "#D52D80", detect: { npm: [typesense], image: [typesense/typesense] } }
+  algolia:       { label: Algolia, category: search, color: "#003DFF", icon: algolia, detect: { npm: [algoliasearch] } }
+  qdrant:        { label: Qdrant, category: search, color: "#DC244C", detect: { npm: ["@qdrant/js-client-rest"], image: [qdrant/qdrant] } }
+  pinecone:      { label: Pinecone, category: search, color: "#1C17FF", detect: { npm: ["@pinecone-database/pinecone"] } }
+
+  # ── object storage ──
+  s3:    { label: Amazon S3, category: blob, color: "#C77700", icon: amazons3, detect: { go: [github.com/aws/aws-sdk-go-v2/service/s3], npm: ["@aws-sdk/client-s3"] } }
+  minio: { label: MinIO, category: blob, color: "#C72E49", icon: minio, detect: { go: [github.com/minio/minio-go], npm: [minio], image: [minio/minio] } }
+  gcs:   { label: Cloud Storage, category: blob, color: "#4285F4", icon: googlecloudstorage, detect: { go: [cloud.google.com/go/storage], npm: ["@google-cloud/storage"] } }
+  r2:    { label: Cloudflare R2, category: blob, color: "#F38020", icon: cloudflare }
+
+  # ── messaging and workflows ──
+  kafka:       { label: Apache Kafka, category: broker, color: "#4B5563", icon: apachekafka, detect: { go: [github.com/segmentio/kafka-go, github.com/twmb/franz-go, github.com/IBM/sarama, github.com/Shopify/sarama, github.com/confluentinc/confluent-kafka-go], npm: [kafkajs, "@confluentinc/kafka-javascript", node-rdkafka], image: [confluentinc/cp-kafka, bitnami/kafka, apache/kafka] } }
+  redpanda:    { label: Redpanda, category: broker, color: "#E2401B", icon: redpanda, detect: { image: [redpandadata/redpanda, docker.redpanda.com/redpandadata/redpanda] } }
+  rabbitmq:    { label: RabbitMQ, category: broker, color: "#FF6600", icon: rabbitmq, aliases: [amqp], detect: { go: [github.com/rabbitmq/amqp091-go, github.com/streadway/amqp], npm: [amqplib, amqp-connection-manager], image: [rabbitmq] } }
+  nats:        { label: NATS, category: broker, color: "#27AAE1", icon: natsdotio, detect: { go: [github.com/nats-io/nats.go], npm: [nats], image: [nats] } }
+  pulsar:      { label: Apache Pulsar, category: broker, color: "#188FFF", icon: apachepulsar, detect: { go: [github.com/apache/pulsar-client-go], npm: [pulsar-client], image: [apachepulsar/pulsar] } }
+  sqs:         { label: Amazon SQS, category: broker, color: "#E7157B", icon: amazonsqs, detect: { go: [github.com/aws/aws-sdk-go-v2/service/sqs], npm: ["@aws-sdk/client-sqs"] } }
+  sns:         { label: Amazon SNS, category: broker, color: "#E7157B", detect: { go: [github.com/aws/aws-sdk-go-v2/service/sns], npm: ["@aws-sdk/client-sns"] } }
+  pubsub:      { label: Google Pub/Sub, category: broker, color: "#4285F4", icon: googlepubsub, detect: { go: [cloud.google.com/go/pubsub], npm: ["@google-cloud/pubsub"] } }
+  kinesis:     { label: Amazon Kinesis, category: broker, color: "#8C4FFF", detect: { npm: ["@aws-sdk/client-kinesis"] } }
+  eventbridge: { label: EventBridge, category: broker, color: "#E7157B", detect: { npm: ["@aws-sdk/client-eventbridge"] } }
+  mqtt:        { label: MQTT, category: broker, color: "#660066", icon: mqtt, detect: { go: [github.com/eclipse/paho.mqtt.golang], npm: [mqtt] } }
+  bullmq:      { label: BullMQ, category: broker, color: "#D82C20", detect: { npm: [bullmq, bull] } }
+  temporal:    { label: Temporal, category: workflow, color: "#1E1E1E", icon: temporal, detect: { go: [go.temporal.io/sdk], npm: ["@temporalio/client", "@temporalio/worker"] } }
+  inngest:     { label: Inngest, category: workflow, color: "#1E1E1E", detect: { npm: [inngest] } }
+
+  # ── gateways and edge ──
+  nginx:      { label: NGINX, category: gateway, color: "#009639", icon: nginx, detect: { image: [nginx] } }
+  envoy:      { label: Envoy, category: gateway, color: "#AC6199", icon: envoyproxy, detect: { image: [envoyproxy/envoy] } }
+  traefik:    { label: Traefik, category: gateway, color: "#24A1C1", icon: traefikproxy, detect: { image: [traefik] } }
+  haproxy:    { label: HAProxy, category: gateway, color: "#106DA9", detect: { image: [haproxy] } }
+  kong:       { label: Kong, category: gateway, color: "#003459", icon: kong, detect: { image: [kong] } }
+  caddy:      { label: Caddy, category: gateway, color: "#1F88C0", icon: caddy, detect: { image: [caddy] } }
+  cloudflare: { label: Cloudflare, category: gateway, color: "#F38020", icon: cloudflare }
+  apigateway: { label: API Gateway, category: gateway, color: "#E7157B", icon: amazonapigateway }
+
+  # ── identity ──
+  keycloak: { label: Keycloak, category: auth, color: "#4D4D4D", icon: keycloak, detect: { image: [quay.io/keycloak/keycloak, keycloak/keycloak] } }
+  auth0:    { label: Auth0, category: auth, color: "#EB5424", icon: auth0, detect: { npm: ["@auth0/nextjs-auth0", auth0] } }
+  okta:     { label: Okta, category: auth, color: "#007DC1", icon: okta, detect: { npm: ["@okta/okta-auth-js"] } }
+  clerk:    { label: Clerk, category: auth, color: "#6C47FF", icon: clerk, detect: { npm: ["@clerk/nextjs", "@clerk/clerk-sdk-node"] } }
+  authjs:   { label: Auth.js, category: auth, color: "#7D6CF0", detect: { npm: [next-auth, "@auth/core"] } }
+
+  # ── observability ──
+  prometheus:    { label: Prometheus, category: observability, color: "#E6522C", icon: prometheus, detect: { go: [github.com/prometheus/client_golang], npm: [prom-client], image: [prom/prometheus] } }
+  grafana:       { label: Grafana, category: observability, color: "#F46800", icon: grafana, detect: { image: [grafana/grafana] } }
+  opentelemetry: { label: OpenTelemetry, category: observability, color: "#425CC7", icon: opentelemetry, aliases: [otel], detect: { go: [go.opentelemetry.io/otel], npm: ["@opentelemetry/api", "@opentelemetry/sdk-node"] } }
+  datadog:       { label: Datadog, category: observability, color: "#632CA6", icon: datadog, detect: { go: [gopkg.in/DataDog/dd-trace-go.v1, github.com/DataDog/dd-trace-go], npm: [dd-trace] } }
+  sentry:        { label: Sentry, category: observability, color: "#362D59", icon: sentry, detect: { go: [github.com/getsentry/sentry-go], npm: ["@sentry/node", "@sentry/nextjs", "@sentry/react"] } }
+  jaeger:        { label: Jaeger, category: observability, color: "#60D0E4", icon: jaeger, detect: { image: [jaegertracing/all-in-one] } }
+  loki:          { label: Loki, category: observability, color: "#F46800", icon: grafana, detect: { image: [grafana/loki] } }
+
+  # ── cloud and platforms ──
+  docker:      { label: Docker, category: cloud, color: "#2496ED", icon: docker }
+  kubernetes:  { label: Kubernetes, category: cloud, color: "#326CE5", icon: kubernetes, aliases: [k8s] }
+  helm:        { label: Helm, category: cloud, color: "#0F1689", icon: helm }
+  terraform:   { label: Terraform, category: cloud, color: "#844FBA", icon: terraform }
+  aws:         { label: AWS, category: cloud, color: "#E07B00", icon: amazonwebservices }
+  gcp:         { label: Google Cloud, category: cloud, color: "#4285F4", icon: googlecloud }
+  azure:       { label: Azure, category: cloud, color: "#0078D4" }
+  lambda:      { label: AWS Lambda, category: cloud, color: "#E07B00", icon: awslambda, detect: { go: [github.com/aws/aws-lambda-go] } }
+  cloudrun:    { label: Cloud Run, category: cloud, color: "#4285F4", icon: googlecloud }
+  workers:     { label: Cloudflare Workers, category: cloud, color: "#F38020", icon: cloudflareworkers, detect: { npm: [wrangler] } }
+  vercel:      { label: Vercel, category: cloud, color: "#1E1E1E", icon: vercel, detect: { npm: [vercel, "@vercel/node"] } }
+  netlify:     { label: Netlify, category: cloud, color: "#00AD9F", icon: netlify }
+  fly:         { label: Fly.io, category: cloud, color: "#7B3BE2", icon: flydotio }
+  heroku:      { label: Heroku, category: cloud, color: "#430098", icon: heroku }
+
+  # ── external services ──
+  stripe:   { label: Stripe, category: saas, color: "#635BFF", icon: stripe, detect: { go: [github.com/stripe/stripe-go], npm: [stripe] } }
+  paypal:   { label: PayPal, category: saas, color: "#003087", icon: paypal, detect: { npm: ["@paypal/checkout-server-sdk"] } }
+  adyen:    { label: Adyen, category: saas, color: "#0ABF53", icon: adyen, detect: { npm: ["@adyen/api-library"] } }
+  twilio:   { label: Twilio, category: saas, color: "#F22F46", icon: twilio, detect: { go: [github.com/twilio/twilio-go], npm: [twilio] } }
+  sendgrid: { label: SendGrid, category: saas, color: "#1A82E2", detect: { go: [github.com/sendgrid/sendgrid-go], npm: ["@sendgrid/mail"] } }
+  mailgun:  { label: Mailgun, category: saas, color: "#F06B66", icon: mailgun, detect: { npm: [mailgun.js] } }
+  resend:   { label: Resend, category: saas, color: "#1E1E1E", icon: resend, detect: { npm: [resend] } }
+  slack:    { label: Slack, category: saas, color: "#4A154B", icon: slack, detect: { go: [github.com/slack-go/slack], npm: ["@slack/web-api", "@slack/bolt"] } }
+  github:   { label: GitHub, category: saas, color: "#181717", icon: github, detect: { go: [github.com/google/go-github], npm: ["@octokit/rest", octokit] } }
+  shopify:  { label: Shopify, category: saas, color: "#7AB55C", icon: shopify, detect: { npm: ["@shopify/shopify-api"] } }
+  whatsapp: { label: WhatsApp, category: saas, color: "#25D366", icon: whatsapp }
+  telegram: { label: Telegram, category: saas, color: "#26A5E4", icon: telegram, detect: { go: [github.com/go-telegram-bot-api/telegram-bot-api], npm: [telegraf, grammy] } }
+  firebase: { label: Firebase, category: saas, color: "#DD2C00", icon: firebase, detect: { npm: [firebase, firebase-admin] } }
+  openai:    { label: OpenAI, category: ai, color: "#1E1E1E", detect: { go: [github.com/sashabaranov/go-openai, github.com/openai/openai-go], npm: [openai] } }
+  anthropic: { label: Anthropic, category: ai, color: "#B8603C", icon: anthropic, detect: { go: [github.com/anthropics/anthropic-sdk-go], npm: ["@anthropic-ai/sdk"] } }
+
+  # ── protocols (as tech, for gateways and tooling) ──
+  graphql:  { label: GraphQL, category: protocol, color: "#E10098", icon: graphql, detect: { go: [github.com/99designs/gqlgen, github.com/graph-gophers/graphql-go], npm: [graphql, "@apollo/server"] } }
+  grpc:     { label: gRPC, category: protocol, color: "#244C5A", detect: { go: [google.golang.org/grpc], npm: ["@grpc/grpc-js"] } }
+  connect:  { label: Connect RPC, category: protocol, color: "#244C5A", detect: { go: [connectrpc.com/connect], npm: ["@connectrpc/connect"] } }
+  openapi:  { label: OpenAPI, category: protocol, color: "#6BA539", icon: openapiinitiative }
+  trpc:     { label: tRPC, category: protocol, color: "#2596BE", icon: trpc, detect: { npm: ["@trpc/server"] } }
+  websocket: { label: WebSocket, category: protocol, color: "#4B5563", aliases: [ws], detect: { go: [github.com/gorilla/websocket, nhooyr.io/websocket, github.com/coder/websocket], npm: [ws, socket.io] } }
+
+# How a connection is drawn. mode: sync | async | stream | data | trigger
+transports:
+  http:      { label: HTTP, mode: sync, aliases: [rest, https] }
+  grpc:      { label: gRPC, mode: sync, aliases: [rpc, connect] }
+  graphql:   { label: GraphQL, mode: sync, aliases: [gql] }
+  trpc:      { label: tRPC, mode: sync }
+  tcp:       { label: TCP, mode: sync }
+  udp:       { label: UDP, mode: async }
+  ws:        { label: WebSocket, mode: stream, aliases: [websocket] }
+  sse:       { label: SSE, mode: stream }
+  topic:     { label: Topic, mode: async, aliases: [event, events, kafka, stream] }
+  queue:     { label: Queue, mode: async, aliases: [job, jobs, amqp, sqs] }
+  webhook:   { label: Webhook, mode: async, aliases: [hook, callback] }
+  sql:       { label: SQL, mode: data }
+  kv:        { label: Key-value, mode: data, aliases: [cache, redis] }
+  blob:      { label: Blob, mode: data, aliases: [s3, file, files] }
+  search:    { label: Search, mode: data }
+  cron:      { label: Schedule, mode: trigger, aliases: [schedule, timer] }
+  call:      { label: In-process call, mode: sync, aliases: [func, inproc] }

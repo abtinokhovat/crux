@@ -296,7 +296,23 @@ function escapePlaceholders(text) {
   return String(text).replace(/(`+)[\s\S]*?\1|<\/?([A-Za-z][\w-]*)[^>]*>/g, (m, tick, tag) => (tick || HTML_TAGS.has(String(tag).toLowerCase()) ? m : m.replace(/</g, "&lt;").replace(/>/g, "&gt;")));
 }
 function escapeBlocks(blocks) {
-  for (const b of blocks) if (b.type === "md" || (b.type === "fence" && ["callout", "decision"].includes(b.lang))) b.text = escapePlaceholders(b.text);
+  for (const b of blocks) if (b.type === "md" || (b.type === "fence" && ["callout", "decision"].includes(b.lang))) b.text = wikiLinks(escapePlaceholders(b.text));
+}
+
+// [[id]], [[id|text]], [[flow#step]] → a chip linking to the element (outside code spans).
+function wikiLinks(text) {
+  const byId = ctx.cfg?.byId;
+  const els = ctx.cfg?.site?.elements ?? [];
+  const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const find = (x) => byId?.get(x) ?? els.find((e) => slug(e.id) === slug(x) || slug(e.title) === slug(x));
+  return String(text).replace(/(`+)[\s\S]*?\1|\[\[([^\]|#]+)(?:#([^\]|]*))?(?:\|([^\]]+))?\]\]/g, (m, tick, id, step, alias) => {
+    if (tick) return m;
+    const e = find(id.trim());
+    if (!e) return `<span class="ak-wiki is-missing" title="not in the system">${esc(alias ?? id)}</span>`;
+    const name = alias ?? (e.kind === "contract" ? e.name : e.title);
+    const href = e.kind === "adr" ? `#/adr/${e.id}` : `#/el/${encodeURIComponent(e.id)}${step ? `?step=${encodeURIComponent(step)}` : ""}`;
+    return `<a class="ak-wiki k-${esc(e.kind)}" href="${href}" data-el="${esc(e.id)}">${esc(name)}${step ? ` · ${esc(step)}` : ""}</a>`;
+  });
 }
 
 // ── public ───────────────────────────────────────────────────────────

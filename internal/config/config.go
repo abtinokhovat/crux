@@ -40,11 +40,29 @@ type Config struct {
 	Me           string             `yaml:"me"`
 	Tags         map[string]TagInfo `yaml:"tags"`
 	Glossary     map[string]string  `yaml:"glossary"` // term → short definition, shown on hover
+	Scan         Scan               `yaml:"scan"`
+	Catalog      string             `yaml:"catalog"` // project catalog extensions
+	Lint         Lint               `yaml:"lint"`
 
 	Root       string `yaml:"-"`
 	File       string `yaml:"-"`
 	ShareToken string `yaml:"-"`
 	User       User   `yaml:"-"`
+}
+
+// Scan: which folders the crux-header discovery walks. Hidden folders, .gitignore entries and
+// the usual build/vendor folders are always skipped.
+type Scan struct {
+	Exclude []string `yaml:"exclude"`
+	Off     bool     `yaml:"off"` // only read dir/docs, like before headers existed
+}
+
+// Lint configures the code checks (crux lint --code).
+type Lint struct {
+	Adapters []string `yaml:"adapters"` // go, ts, or a command that prints facts.json
+	Topics   []string `yaml:"topics"`   // extra regexes with one capture group: the topic name
+	Routes   []string `yaml:"routes"`   // extra regexes: (METHOD) and (path) or just (path)
+	Ignore   []string `yaml:"ignore"`   // finding ids or globs to silence
 }
 
 // Flow: Draft (private) → Open → In review (shared) → Accepted | Rejected.
@@ -68,6 +86,7 @@ func defaults() Config {
 		Architecture: "docs/adr/architecture.yaml",
 		Components:   ".crux/components",
 		Template:     ".crux/template.md",
+		Catalog:      ".crux/catalog.yaml",
 		Prefix:       "ADR",
 		Digits:       4,
 		Statuses:     DefaultStatuses(),
@@ -152,6 +171,16 @@ func merge(dst *Config, src Config) {
 	if src.Digits > 0 {
 		dst.Digits = src.Digits
 	}
+	if src.Catalog != "" {
+		dst.Catalog = src.Catalog
+	}
+	if src.Scan.Exclude != nil || src.Scan.Off {
+		dst.Scan = src.Scan
+	}
+	if src.Lint.Adapters != nil || src.Lint.Topics != nil || src.Lint.Routes != nil || src.Lint.Ignore != nil {
+		dst.Lint = src.Lint
+	}
+	dst.Glossary = src.Glossary
 	maps.Copy(dst.Statuses, src.Statuses)
 	maps.Copy(dst.Tags, src.Tags)
 	dst.Share = firstNonEmpty(src.Share, dst.Share)

@@ -4,11 +4,13 @@
   "description": "Build tooling for the crux browser renderer (web/vendor/crux-render.js). The crux binary itself is Go.",
   "type": "module",
   "scripts": {
-    "build:web": "node scripts/build-web.mjs"
+    "build:web": "node scripts/build-web.mjs",
+    "build:icons": "node scripts/build-icons.mjs"
   },
   "devDependencies": {
+    "esbuild": "^0.25.12",
     "highlight.js": "^11.12.0",
-    "yaml": "^2.9.1",
-    "esbuild": "^0.25.12"
+    "simple-icons": "^16.34.0",
+    "yaml": "^2.9.1"
   }
 }

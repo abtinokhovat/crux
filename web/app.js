@@ -6,6 +6,7 @@ import { openSearch, search } from "./search.js";
 import { archTree, areaBars, history, panel, register, sheet, statusCell, titleBlock } from "./blueprint.js";
 import { bindFlow, finalizeHtml, flowStrip, openNewQuestion, privacy, sharePanel, shareOf, teamHtml } from "./flow.js";
 import { componentsCss, listComponents, loadProjectComponents, renderAdr, themeCss } from "./vendor/crux-render.js";
+import { completeness, elementPage, elementPopover, flowsPage, injectCatalogCss, playOnMap, questionsPage, sessionsPage, systemPage, systemSummary, techIcon } from "./system.js";
 
 // Theme tokens come from the renderer (answer-me-with-html themes), so the page and the
 // rendered ADRs always agree.
@@ -18,10 +19,16 @@ let cleanup = null;
 async function loadSite() {
   const site = await (await fetch("api/site", { cache: "no-store" })).json();
   index(site);
+  injectCatalogCss();
   S.docCache.clear();
   document.title = site.title;
   $("#brand-title").textContent = site.title;
   $("#nav-count").textContent = site.adrs.length;
+  const sysCount = (site.elements ?? []).filter((e) => !["flow", "question", "session"].includes(e.kind) && !e.implied).length;
+  $("#nav-sys").textContent = sysCount || "";
+  $("#nav-flows").textContent = (site.elements ?? []).filter((e) => e.kind === "flow").length || "";
+  const oq = (site.elements ?? []).filter((e) => e.kind === "question" && e.state !== "answered").length;
+  $("#nav-q").textContent = oq || "";
   injectStatusCss(site.statuses);
   $("#new-q")?.classList.toggle("hidden", !site.local);
   // project components (.crux/components/*.mjs) run in the browser, next to the built-in ones
@@ -42,7 +49,7 @@ async function loadDoc(id) {
   if (!S.docCache.has(id)) S.docCache.set(id, fetch(`api/doc/${encodeURIComponent(id)}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)));
   const doc = await S.docCache.get(id);
   if (!doc) return null;
-  const { html, errors } = renderAdr({ ...doc.meta, source: doc.source }, { byId: S.byId }, { prefix: S.site.prefix, digits: S.site.digits ?? 4, statuses: S.site.statuses, glossary: S.site.glossary, arch: S.site.architecture });
+  const { html, errors } = renderAdr({ ...doc.meta, source: doc.source }, { byId: S.byId }, { prefix: S.site.prefix, digits: S.site.digits ?? 4, statuses: S.site.statuses, glossary: S.site.glossary, arch: S.site.architecture, site: S.site, byId: S.byId, techIcon });
   return { ...doc, html, errors };
 }
 
@@ -78,13 +85,25 @@ const ROUTES = {
   tag: (p) => tagPage(p[1]),
   components,
   search: (p, q) => searchPage(q.get("q") ?? ""),
+  system: systemPage,
+  flows: flowsPage,
+  questions: questionsPage,
+  sessions: sessionsPage,
+  el: async (p, q) => {
+    const out = await elementPage(view, p.slice(1).join("/"), q, loadDoc);
+    if (typeof out === "string") return out;
+    cleanup = out;
+    return null;
+  },
 };
 
 async function route({ keepScroll = false } = {}) {
   const { parts, q } = parseHash();
   const name = parts[0] ?? "";
   const fn = ROUTES[name] ?? notFound;
-  for (const a of $$("#nav a")) a.toggleAttribute("aria-current", a.dataset.route === (name || "home") || (name === "adr" && a.dataset.route === "list") || (name === "tag" && a.dataset.route === "tags"));
+  const elKind = name === "el" ? S.byId.get(parts.slice(1).join("/"))?.kind : null;
+  const navFor = { flow: "flows", question: "questions", session: "sessions" };
+  for (const a of $$("#nav a")) a.toggleAttribute("aria-current", a.dataset.route === (name || "home") || (name === "adr" && a.dataset.route === "list") || (name === "tag" && a.dataset.route === "tags") || (name === "el" && a.dataset.route === (navFor[elKind] ?? "system")));
   for (const a of $$("#nav a[aria-current]")) a.setAttribute("aria-current", "page");
   cleanup?.();
   cleanup = null;
@@ -145,7 +164,10 @@ function home() {
   const probs = problems.length ? panel("!", `Problems (${problems.length})`, `<ul class="ak-problems">${problems.map((p) => `<li><code>${esc(p.file)}</code> — ${esc(p.message)}</li>`).join("")}</ul>`, { meta: "adr lint", span: 3, flush: true }) : "";
   const byNum = [...adrs].sort((a, b) => a.num - b.num);
 
+  const hasSystem = (S.site.elements ?? []).length > 0;
   const grid = [
+    hasSystem ? panel("S", "System", systemSummary(), { meta: `<a href="#/system">open system →</a>`, span: 2 }) : "",
+    hasSystem ? panel("!", "What's missing", completeness(), { meta: "completeness" }) : "",
     panel("A", "Needs a decision", needs, { meta: `${open.length} open · ${qs} questions`, span: 2, flush: true }),
     `<div class="ak-stackcol">${panel("B", "Title block", tblock, { cls: "am-panel--bare" })}${panel("C", "Decisions by area", areaBars(order) || `<div class="ak-empty">Link ADRs to components to see this.</div>`, { meta: "status mix" })}</div>`,
     panel("D", "Decision register", register(byNum), { meta: `${adrs.length} records`, span: 3, flush: true }),
@@ -533,6 +555,26 @@ ${kids.length ? `<div class="ak-npop-h">Inside · ${kids.length}</div><div class
       pop = null;
     }
   });
+  // Elements (services, contracts, flows…): kind, tech, connections, flows.
+  document.addEventListener("mouseover", (e) => {
+    const t = e.target.closest("[data-el]");
+    if (!t || t.closest(".ak-pop")) return;
+    const el = S.byId.get(t.dataset.el);
+    if (!el || pop?.dataset.for === el.id) return;
+    pop?.remove();
+    pop = document.createElement("div");
+    const tech = el.tech?.[0] ? ` tech tech-${String(el.tech[0]).replace(/[^a-z0-9-]/g, "")}` : "";
+    pop.className = `ak-pop ak-npop${tech}`;
+    pop.dataset.for = el.id;
+    pop.innerHTML = elementPopover(el);
+    place(t);
+  });
+  document.addEventListener("mouseout", (e) => {
+    if (e.target.closest?.("[data-el]") && !e.relatedTarget?.closest?.("[data-el]")) {
+      pop?.remove();
+      pop = null;
+    }
+  });
   document.addEventListener("mouseover", (e) => {
     const t = e.target.closest("[data-ref]");
     if (!t || t.closest(".ak-pop")) return;
@@ -854,6 +896,10 @@ addEventListener("keydown", (e) => {
   }
 });
 $("#open-search").addEventListener("click", () => openSearch());
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-play-flow]");
+  if (b && !e.defaultPrevented && !b.closest(".ak-elpage")) playOnMap(S.byId.get(b.dataset.playFlow));
+});
 $("#new-q").addEventListener("click", () => openNewQuestion());
 
 addEventListener("hashchange", () => {

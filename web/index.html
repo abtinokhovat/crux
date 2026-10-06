@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Decision records</title>
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="system.css">
 </head>
 <body>
 <header class="ak-top">
@@ -13,14 +14,17 @@
     <nav class="ak-nav" id="nav" aria-label="Views">
       <a href="#/" data-route="home">Overview</a>
       <a href="#/list" data-route="list">Decisions <b id="nav-count"></b></a>
-      <a href="#/map" data-route="map">Architecture</a>
+      <a href="#/system" data-route="system">System <b id="nav-sys"></b></a>
+      <a href="#/flows" data-route="flows">Flows <b id="nav-flows"></b></a>
+      <a href="#/map" data-route="map">Map</a>
+      <a href="#/questions" data-route="questions">Questions <b id="nav-q"></b></a>
+      <a href="#/sessions" data-route="sessions">Sessions</a>
       <a href="#/graph" data-route="graph">Graph</a>
-      <a href="#/tags" data-route="tags">Tags</a>
       <a href="#/components" data-route="components">Components</a>
     </nav>
     <div class="ak-tools">
       <button class="ak-btn ak-btn--primary hidden" id="new-q" type="button" title="Capture a decision to make">＋ Question</button>
-      <button class="ak-btn ak-search-btn" id="open-search" type="button"><span>Search decisions…</span><kbd>⌘K</kbd></button>
+      <button class="ak-btn ak-search-btn" id="open-search" type="button"><span>Search…</span><kbd>⌘K</kbd></button>
       <span class="ak-live off" id="live" title="Live reload"></span>
     </div>
   </div>

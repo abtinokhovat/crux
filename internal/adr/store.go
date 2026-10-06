@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/abtinokhovat/crux/internal/catalog"
 	"github.com/abtinokhovat/crux/internal/config"
 	"gopkg.in/yaml.v3"
 )
@@ -56,6 +57,29 @@ type Doc struct {
 	Text       string              `json:"text"`
 	Meta       map[string]any      `json:"-"`
 	Source     string              `json:"-"`
+
+	// elements (crux: <kind> files)
+	Parent      string   `json:"parent,omitempty"`
+	Tech        []string `json:"tech,omitempty"`
+	Code        []string `json:"code,omitempty"`
+	CodeImplied bool     `json:"codeImplied,omitempty"`
+	Origin      string   `json:"origin,omitempty"`
+	Confidence  string   `json:"confidence,omitempty"`
+	Evidence    []string `json:"evidence,omitempty"`
+	Transport   string   `json:"transport,omitempty"` // contract
+	Name        string   `json:"name,omitempty"`      // contract: "POST /orders", "order.created"
+	On          string   `json:"on,omitempty"`
+	Schema      string   `json:"schema,omitempty"`
+	Trigger     string   `json:"trigger,omitempty"` // flow
+	Outcome     string   `json:"outcome,omitempty"`
+	Steps       []Step   `json:"steps,omitempty"`
+	Phase       string   `json:"phase,omitempty"` // session
+	State       string   `json:"state,omitempty"` // question: open | answered
+	RaisedFrom  string   `json:"raisedFrom,omitempty"`
+	Answer      string   `json:"answer,omitempty"`
+	Implied     bool     `json:"implied,omitempty"` // made from a reference; no file
+	Unknown     bool     `json:"unknown,omitempty"` // crux: value is not a known kind
+	Wiki        []string `json:"-"`
 }
 
 type Edge struct {
@@ -76,6 +100,9 @@ type Node struct {
 	Label    string   `json:"label"`
 	Kind     string   `json:"kind"`
 	Tech     string   `json:"tech"`  // infra technology (redis, kafka, postgres…): colors the box
+	Techs    []string `json:"techs,omitempty"`
+	Doc      string   `json:"doc,omitempty"`    // element id when the box comes from a crux file
+	Origin   string   `json:"origin,omitempty"` // inferred boxes draw dotted
 	Lines    string   `json:"lines"` // "straight" draws this level with straight lines instead of elbows
 	Sub      string   `json:"sub"`
 	Desc     string   `json:"desc"`
@@ -109,6 +136,11 @@ type ArchEdge struct {
 	Sel    bool      `json:"sel"`
 	Lp     *float64  `json:"lp"`
 	Lo     []float64 `json:"lo"`
+	// from element links
+	Type      string `json:"type,omitempty"`
+	Transport string `json:"transport,omitempty"`
+	Mode      string `json:"mode,omitempty"`
+	Via       string `json:"via,omitempty"`
 }
 
 type Architecture struct {
@@ -125,6 +157,9 @@ type Architecture struct {
 type Store struct {
 	Adrs         []*Doc              `json:"adrs"`
 	Docs         []*Doc              `json:"docs"`
+	Elements     []*Doc              `json:"elements"`
+	Links        []Link              `json:"links"`
+	Catalog      *catalog.Catalog    `json:"-"`
 	Edges        []Edge              `json:"edges"`
 	Tags         map[string][]string `json:"tags"`
 	Architecture *Architecture       `json:"architecture"`
@@ -172,11 +207,63 @@ func sections(panels []Panel) []Section {
 	return out
 }
 
-// ReadDoc parses one markdown file. isADR decides the id scheme.
+// ReadDoc parses one markdown file. isADR decides the id scheme (number from the file name).
 func ReadDoc(path string, cfg *config.Config, isADR bool) (*Doc, error) {
-	data, err := os.ReadFile(path)
+	d, body, err := readBase(path, cfg)
 	if err != nil {
 		return nil, err
+	}
+	if isADR {
+		m := adrFile.FindStringSubmatch(filepath.Base(path))
+		fillADR(d, body, cfg, atoi(m[1]), m[2])
+	} else {
+		fillDoc(d, body, cfg)
+	}
+	return d, nil
+}
+
+// ReadCrux parses a file with a "crux: <kind>" header: an ADR, a doc, or an element.
+func ReadCrux(path string, cfg *config.Config, cat *catalog.Catalog) (*Doc, error) {
+	d, body, err := readBase(path, cfg)
+	if err != nil {
+		return nil, err
+	}
+	kind, known := NormKind(Str(d.Meta["crux"]))
+	switch kind {
+	case "adr":
+		num := 0
+		slug := ""
+		if m := adrFile.FindStringSubmatch(filepath.Base(path)); m != nil {
+			num, slug = atoi(m[1]), m[2]
+		}
+		if x := Str(d.Meta["id"]); x != "" && RefID(x, cfg.Digits) != "" {
+			num = atoi(RefID(x, cfg.Digits))
+		}
+		if num == 0 {
+			return nil, fmt.Errorf("crux: adr needs a number: id: 12, or a file name like 0012-title.md")
+		}
+		if slug == "" {
+			slug = Slug(firstNonEmpty(Str(d.Meta["title"]), h1(body)))
+		}
+		fillADR(d, body, cfg, num, slug)
+	case "doc":
+		fillDoc(d, body, cfg)
+		if id := Str(d.Meta["id"]); id != "" {
+			d.ID = id
+		}
+	default:
+		readElement(d, kind, body, cfg, cat)
+		if !known {
+			d.Unknown = true
+		}
+	}
+	return d, nil
+}
+
+func readBase(path string, cfg *config.Config) (*Doc, string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "", err
 	}
 	st, _ := os.Stat(path)
 	src := string(data)
@@ -189,76 +276,109 @@ func ReadDoc(path string, cfg *config.Config, isADR bool) (*Doc, error) {
 		Tags: lower(AsList(meta["tags"])), Components: orEmpty(AsList(firstOf(meta["components"], meta["component"]))),
 		Rel: map[string][]string{}, Facts: ExtractFacts(panels), Sections: sections(panels), Text: PlainText(body), Date: Str(meta["date"]),
 	}
-	if isADR {
-		m := adrFile.FindStringSubmatch(filepath.Base(path))
-		d.Kind, d.Num, d.Slug = "adr", atoi(m[1]), m[2]
-		d.ID = RefID(m[1], cfg.Digits)
-		d.Status = Str(meta["status"])
-		if d.Status == "" {
-			d.Status = "Proposed"
-		}
-		d.StatusKey = StatusKey(d.Status)
-		title := Str(meta["title"])
-		if title == "" {
-			title = strings.ReplaceAll(d.Slug, "-", " ")
-		}
-		d.Title = regexp.MustCompile(`(?i)^\s*`+regexp.QuoteMeta(cfg.Prefix)+`[-\s]?0*`+strconv.Itoa(d.Num)+`\s*[—–:-]\s*`).ReplaceAllString(title, "")
-		for k, v := range meta {
-			key := strings.ToLower(k)
-			if a, ok := relAliases[key]; ok {
-				key = a
-			}
-			if _, ok := Relations[key]; ok && key != "mentions" {
-				var ids []string
-				for _, x := range AsList(v) {
-					if id := RefID(x, cfg.Digits); id != "" {
-						ids = append(ids, id)
-					}
-				}
-				d.Rel[key] = ids
-			}
-		}
-		if m := regexp.MustCompile(`(?i)superseded\s+by\s+(?:\w+-)?(\d+)`).FindStringSubmatch(d.Status); m != nil {
-			d.Rel["superseded_by"] = uniq(append(d.Rel["superseded_by"], RefID(m[1], cfg.Digits)))
-		}
-		d.Mentions = mentionsIn(body, cfg, d.ID)
-	} else {
-		d.Kind, d.ID = "doc", "doc:"+d.File
-		d.Title = Str(meta["title"])
-		if d.Title == "" {
-			if m := regexp.MustCompile(`(?m)^#\s+(.+)$`).FindStringSubmatch(body); m != nil {
-				d.Title = m[1]
-			} else {
-				d.Title = strings.TrimSuffix(filepath.Base(path), ".md")
-			}
-		}
-		d.Status = Str(meta["status"])
-		d.StatusKey = "doc"
-		if d.Status != "" {
-			d.StatusKey = StatusKey(d.Status)
-		}
-		d.Mentions = mentionsIn(body, cfg, "")
-	}
-	return d, nil
+	return d, body, nil
 }
 
-// Load reads every ADR and doc, then builds edges, tags and the architecture map.
+func fillADR(d *Doc, body string, cfg *config.Config, num int, slug string) {
+	meta := d.Meta
+	d.Kind, d.Num, d.Slug = "adr", num, slug
+	d.ID = fmt.Sprintf("%0*d", cfg.Digits, num)
+	d.Status = Str(meta["status"])
+	if d.Status == "" {
+		d.Status = "Proposed"
+	}
+	d.StatusKey = StatusKey(d.Status)
+	title := Str(meta["title"])
+	if title == "" && Str(meta["crux"]) != "" {
+		title = h1(body)
+	}
+	if title == "" {
+		title = strings.ReplaceAll(d.Slug, "-", " ")
+	}
+	d.Title = regexp.MustCompile(`(?i)^\s*`+regexp.QuoteMeta(cfg.Prefix)+`[-\s]?0*`+strconv.Itoa(d.Num)+`\s*[—–:-]\s*`).ReplaceAllString(title, "")
+	for k, v := range meta {
+		key := strings.ToLower(k)
+		if a, ok := relAliases[key]; ok {
+			key = a
+		}
+		if _, ok := Relations[key]; ok && key != "mentions" {
+			var ids []string
+			for _, x := range AsList(v) {
+				if id := RefID(x, cfg.Digits); id != "" {
+					ids = append(ids, id)
+				}
+			}
+			d.Rel[key] = ids
+		}
+	}
+	if m := regexp.MustCompile(`(?i)superseded\s+by\s+(?:\w+-)?(\d+)`).FindStringSubmatch(d.Status); m != nil {
+		d.Rel["superseded_by"] = uniq(append(d.Rel["superseded_by"], RefID(m[1], cfg.Digits)))
+	}
+	d.Mentions = mentionsIn(body, cfg, d.ID)
+	for _, m := range wikiRe.FindAllStringSubmatch(body, -1) {
+		d.Wiki = append(d.Wiki, strings.TrimSpace(m[1]))
+	}
+}
+
+func fillDoc(d *Doc, body string, cfg *config.Config) {
+	meta := d.Meta
+	d.Kind, d.ID = "doc", "doc:"+d.File
+	d.Title = Str(meta["title"])
+	if d.Title == "" {
+		if t := h1(body); t != "" {
+			d.Title = t
+		} else {
+			d.Title = strings.TrimSuffix(filepath.Base(d.File), ".md")
+		}
+	}
+	d.Status = Str(meta["status"])
+	d.StatusKey = "doc"
+	if d.Status != "" {
+		d.StatusKey = StatusKey(d.Status)
+	}
+	d.Mentions = mentionsIn(body, cfg, "")
+	for _, m := range wikiRe.FindAllStringSubmatch(body, -1) {
+		d.Wiki = append(d.Wiki, strings.TrimSpace(m[1]))
+	}
+}
+
+// LoadCatalog reads the built-in catalog plus the project's extensions.
+func LoadCatalog(cfg *config.Config) (*catalog.Catalog, error) {
+	return catalog.Load(cfg.Abs(cfg.Catalog))
+}
+
+// Load reads every ADR, doc and crux file, then builds edges, tags, the element graph and the
+// architecture map.
 func Load(cfg *config.Config) *Store {
-	s := &Store{Tags: map[string][]string{}, ByID: map[string]*Doc{}, Problems: []Problem{}, Adrs: []*Doc{}, Docs: []*Doc{}, Edges: []Edge{}}
+	s := &Store{Tags: map[string][]string{}, ByID: map[string]*Doc{}, Problems: []Problem{}, Adrs: []*Doc{}, Docs: []*Doc{}, Elements: []*Doc{}, Links: []Link{}, Edges: []Edge{}}
+	cat, err := LoadCatalog(cfg)
+	if err != nil {
+		s.Problems = append(s.Problems, Problem{File: cfg.Catalog, Message: "catalog: " + err.Error()})
+		cat = catalog.Builtin()
+	}
+	s.Catalog = cat
+	loaded := map[string]bool{}
 	adrDir := cfg.Abs(cfg.Dir)
 	entries, _ := os.ReadDir(adrDir)
 	for _, e := range entries {
 		if e.IsDir() || !adrFile.MatchString(e.Name()) {
 			continue
 		}
-		d, err := ReadDoc(filepath.Join(adrDir, e.Name()), cfg, true)
+		p := filepath.Join(adrDir, e.Name())
+		loaded[p] = true
+		var d *Doc
+		var err error
+		if !cfg.Scan.Off && HasCruxHeader(p) {
+			d, err = ReadCrux(p, cfg, cat)
+		} else {
+			d, err = ReadDoc(p, cfg, true)
+		}
 		if err != nil {
-			s.Problems = append(s.Problems, Problem{File: cfg.Rel(filepath.Join(adrDir, e.Name())), Message: err.Error()})
+			s.Problems = append(s.Problems, Problem{File: cfg.Rel(p), Message: err.Error()})
 			continue
 		}
-		s.Adrs = append(s.Adrs, d)
+		s.add(d)
 	}
-	sort.Slice(s.Adrs, func(i, j int) bool { return s.Adrs[i].Num < s.Adrs[j].Num })
 	for _, dir := range cfg.Docs {
 		_ = filepath.WalkDir(cfg.Abs(dir), func(p string, e os.DirEntry, err error) error {
 			if err != nil || e.IsDir() && strings.HasPrefix(e.Name(), ".") && p != cfg.Abs(dir) {
@@ -267,18 +387,51 @@ func Load(cfg *config.Config) *Store {
 				}
 				return nil
 			}
-			if e.IsDir() || !strings.HasSuffix(p, ".md") || (strings.HasPrefix(p, adrDir) && adrFile.MatchString(e.Name())) {
+			if e.IsDir() || !strings.HasSuffix(p, ".md") || loaded[p] {
 				return nil
 			}
+			if !cfg.Scan.Off && HasCruxHeader(p) {
+				return nil // the header scan reads it
+			}
+			loaded[p] = true
 			if d, err := ReadDoc(p, cfg, false); err == nil {
 				s.Docs = append(s.Docs, d)
 			}
 			return nil
 		})
 	}
-	all := append(append([]*Doc{}, s.Adrs...), s.Docs...)
+	if !cfg.Scan.Off {
+		WalkProject(cfg, LoadIgnore(cfg), func(abs, rel string, e os.DirEntry) {
+			if loaded[abs] || !strings.HasSuffix(strings.ToLower(abs), ".md") || !HasCruxHeader(abs) {
+				return
+			}
+			loaded[abs] = true
+			d, err := ReadCrux(abs, cfg, cat)
+			if err != nil {
+				s.Problems = append(s.Problems, Problem{File: rel, Message: err.Error()})
+				return
+			}
+			s.add(d)
+		})
+	}
+	sort.Slice(s.Adrs, func(i, j int) bool { return s.Adrs[i].Num < s.Adrs[j].Num })
+	sort.SliceStable(s.Elements, func(i, j int) bool {
+		a, b := s.Elements[i], s.Elements[j]
+		if ra, rb := kindOrder(a.Kind), kindOrder(b.Kind); ra != rb {
+			return ra < rb
+		}
+		return a.File < b.File
+	})
+	all := append(append(append([]*Doc{}, s.Adrs...), s.Docs...), s.Elements...)
 	for _, d := range all {
+		if prev := s.ByID[d.ID]; prev != nil {
+			s.Problems = append(s.Problems, Problem{File: d.File, Message: fmt.Sprintf("duplicate id %q (also %s); set a distinct id:", d.ID, prev.File)})
+			continue
+		}
 		s.ByID[d.ID] = d
+		if d.Unknown {
+			s.Problems = append(s.Problems, Problem{File: d.File, Message: fmt.Sprintf("crux: %q is not a known kind (%s)", Str(d.Meta["crux"]), strings.Join(Kinds, ", ")), Level: "warn"})
+		}
 	}
 	for _, a := range s.Adrs {
 		for typ, ids := range a.Rel {
@@ -297,8 +450,14 @@ func Load(cfg *config.Config) *Store {
 			s.Problems = append(s.Problems, Problem{File: a.File, Message: fmt.Sprintf("unknown status %q", a.Status)})
 		}
 	}
+	linkElements(s, cfg, cat)
+	all = append(append(append([]*Doc{}, s.Adrs...), s.Docs...), s.Elements...)
 	s.buildEdges(all)
 	s.Architecture = loadArchitecture(cfg, s)
+	s.Architecture = mergeElements(s.Architecture, s, cfg)
+	if s.Architecture != nil {
+		s.Architecture.computeDeep()
+	}
 	for _, d := range all {
 		for _, t := range d.Tags {
 			s.Tags[t] = append(s.Tags[t], d.ID)
@@ -314,6 +473,26 @@ func Load(cfg *config.Config) *Store {
 		}
 	}
 	return s
+}
+
+func (s *Store) add(d *Doc) {
+	switch d.Kind {
+	case "adr":
+		s.Adrs = append(s.Adrs, d)
+	case "doc":
+		s.Docs = append(s.Docs, d)
+	default:
+		s.Elements = append(s.Elements, d)
+	}
+}
+
+func kindOrder(k string) int {
+	for i, x := range Kinds {
+		if x == k {
+			return i
+		}
+	}
+	return len(Kinds)
 }
 
 func (s *Store) buildEdges(all []*Doc) {
@@ -474,7 +653,9 @@ func loadArchitecture(cfg *config.Config, s *Store) *Architecture {
 		for _, c := range d.Components {
 			n := a.Nodes[c]
 			if n == nil {
-				s.Problems = append(s.Problems, Problem{File: d.File, Message: fmt.Sprintf("component %q is not in %s", c, cfg.Architecture)})
+				if s.ByID[c] == nil && newResolver(s.Elements).find(c) == nil {
+					s.Problems = append(s.Problems, Problem{File: d.File, Message: fmt.Sprintf("component %q is not in %s or any crux file", c, cfg.Architecture)})
+				}
 				continue
 			}
 			if !contains(n.Adrs, d.ID) {
@@ -490,25 +671,36 @@ func loadArchitecture(cfg *config.Config, s *Store) *Architecture {
 			}
 		}
 	}
-	var deep func(id string) []string
-	deep = func(id string) []string {
+	return a
+}
+
+// computeDeep sets each node's decisions including its whole subtree.
+func (a *Architecture) computeDeep() {
+	for _, n := range a.Nodes {
+		n.Deep = nil
+	}
+	var deep func(id string, seen map[string]bool) []string
+	deep = func(id string, seen map[string]bool) []string {
 		n := a.Nodes[id]
 		if n.Deep != nil {
 			return n.Deep
 		}
+		if seen[id] {
+			return nil
+		}
+		seen[id] = true
 		out := append([]string{}, n.Adrs...)
 		for _, c := range n.Children {
 			if a.Nodes[c] != nil {
-				out = append(out, deep(c)...)
+				out = append(out, deep(c, seen)...)
 			}
 		}
 		n.Deep = uniq(out)
 		return n.Deep
 	}
 	for id := range a.Nodes {
-		deep(id)
+		deep(id, map[string]bool{})
 	}
-	return a
 }
 
 func groups(v any) []Group {

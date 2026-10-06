@@ -6,20 +6,52 @@ export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 export function index(site) {
+  site.elements ??= [];
+  site.links ??= [];
   S.site = site;
-  S.byId = new Map([...site.adrs, ...site.docs].map((a) => [a.id, a]));
+  S.byId = new Map([...site.adrs, ...site.docs, ...site.elements].map((a) => [a.id, a]));
   S.adj = new Map();
   for (const x of S.byId.keys()) S.adj.set(x, []);
   for (const e of site.edges) {
     S.adj.get(e.from)?.push({ id: e.to, type: e.type, dir: "out" });
     S.adj.get(e.to)?.push({ id: e.from, type: e.type, dir: "in" });
   }
+  // element links: decided_by, blocked_by, mentions… show on ADR and doc pages too
+  for (const l of site.links) {
+    if (!["decided_by", "blocked_by", "blocks", "raised_from", "produced", "mentions", "relates"].includes(l.type)) continue;
+    S.adj.get(l.from)?.push({ id: l.to, type: l.type, dir: "out" });
+    S.adj.get(l.to)?.push({ id: l.from, type: l.type, dir: "in" });
+  }
+  S.out = new Map();
+  S.in = new Map();
+  for (const l of site.links) {
+    if (!S.out.has(l.from)) S.out.set(l.from, []);
+    if (!S.in.has(l.to)) S.in.set(l.to, []);
+    S.out.get(l.from).push(l);
+    S.in.get(l.to).push(l);
+  }
+  S.kids = new Map();
+  for (const e of site.elements) if (e.parent) {
+    if (!S.kids.has(e.parent)) S.kids.set(e.parent, []);
+    S.kids.get(e.parent).push(e);
+  }
 }
 
-export const label = (a) => (a.kind === "adr" ? `${S.site.prefix}-${a.id}` : "DOC");
-export const href = (a) => (a.kind === "adr" ? `#/adr/${a.id}` : `#/doc/${encodeURIComponent(a.id)}`);
+export const isElement = (a) => a && a.kind !== "adr" && a.kind !== "doc";
+export const KIND_LABEL = { contract: "Contract", entity: "Entity", flow: "Flow", question: "Question", session: "Session", convention: "Convention" };
+export const label = (a) => (a.kind === "adr" ? `${S.site.prefix}-${a.id}` : a.kind === "doc" ? "DOC" : a.kind === "contract" ? String(a.transport || "contract").toUpperCase() : String(a.kind).toUpperCase());
+export const href = (a) => (a.kind === "adr" ? `#/adr/${a.id}` : a.kind === "doc" ? `#/doc/${encodeURIComponent(a.id)}` : `#/el/${encodeURIComponent(a.id)}`);
+export const linksOut = (id, ...types) => (S.out.get(id) ?? []).filter((l) => !types.length || types.includes(l.type));
+export const linksIn = (id, ...types) => (S.in.get(id) ?? []).filter((l) => !types.length || types.includes(l.type));
+export const childrenOf = (id) => S.kids.get(id) ?? [];
+export function elAncestors(id) {
+  const out = [];
+  const seen = new Set();
+  for (let e = S.byId.get(S.byId.get(id)?.parent); e && !seen.has(e.id); e = S.byId.get(e.parent)) { seen.add(e.id); out.unshift(e); }
+  return out;
+}
 export const statusLabel = (k) => S.site.statuses[k]?.label ?? k;
-export const pill = (a, lg = false) => (a.status ? `<span class="ak-pill${lg ? " ak-pill--lg" : ""} ak-st-${esc(a.statusKey)}">${esc(a.status)}</span>` : `<span class="ak-pill ak-st-doc">Doc</span>`);
+export const pill = (a, lg = false) => (a.status ? `<span class="ak-pill${lg ? " ak-pill--lg" : ""} ak-st-${esc(a.statusKey)}">${esc(a.status)}</span>` : isElement(a) ? "" : `<span class="ak-pill ak-st-doc">Doc</span>`);
 export const tagChip = (t, on = false, count) => `<a class="ak-chip ak-chip--tag${on ? " on" : ""}" href="#/tag/${encodeURIComponent(t)}">${esc(t)}${count != null ? ` <b>${count}</b>` : ""}</a>`;
 export const nodeChip = (id) => {
   const n = S.site.architecture?.nodes[id];
@@ -29,6 +61,7 @@ export const refChip = (a) => `<a class="ak-chip ak-st ak-st-${esc(a.statusKey)}
 
 // The one-line gist of a decision, in priority order.
 export function gist(a) {
+  if (a.kind === "question") return a.answer ? { kind: "decision", text: a.answer } : { kind: "question", text: a.subtitle || a.title };
   const f = a.facts ?? {};
   if (f.decision) return { kind: "decision", text: f.decision };
   if (f.recommendation) return { kind: "recommendation", text: f.recommendation };
