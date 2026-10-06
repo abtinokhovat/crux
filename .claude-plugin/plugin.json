@@ -1,7 +1,7 @@
 {
   "name": "crux",
   "version": "0.1.0",
-  "description": "Decisions your team and your agents can see: capture a question, enrich it with your Claude, review it with the team, finalize it, and let agents check decisions before changing code.",
+  "description": "Decisions and system design your team and your agents can see: map a repo into services, contracts and flows, run design and code-design sessions, implement from the graph with questions flowing back, and let agents check decisions before changing code.",
   "author": {
     "name": "Abtin Okhovat"
   },

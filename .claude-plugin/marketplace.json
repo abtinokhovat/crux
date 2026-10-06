@@ -4,13 +4,13 @@
     "name": "Abtin Okhovat"
   },
   "metadata": {
-    "description": "Skills for recording, reviewing and using architecture decisions."
+    "description": "Skills for system design, architecture decisions and the crux graph."
   },
   "plugins": [
     {
       "name": "crux",
       "source": "./",
-      "description": "crux skill (enrich / digest / finalize ADRs, check decisions before coding) + answer-me-with-html (visual explainer pages; also the renderer crux uses).",
+      "description": "crux (decisions + system graph, checks before coding), crux-adopt (map a repo), crux-design (system design session), crux-model (code design), crux-build (implement with questions) + answer-me-with-html (the renderer crux uses).",
       "version": "0.1.0"
     }
   ]

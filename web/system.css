@@ -333,3 +333,5 @@
 .ak-wiki.k-question { border: 1px dotted var(--warn); color: var(--warn); }
 .ak-wiki.is-missing { border-color: var(--err); color: var(--err); text-decoration: line-through; }
 .ak-steps .am-seq svg { min-width: 640px; }
+.ak-gap-fix { display: block; margin-top: 4px; font-size: 11px; color: var(--ink-2); white-space: normal; overflow-wrap: anywhere; }
+.ak-el-doc > .am-intro { margin-bottom: 18px; } .ak-el-doc > .am-intro > * + * { margin-top: 12px; }

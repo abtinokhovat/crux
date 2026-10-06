@@ -72,6 +72,7 @@ func DefaultStatuses() map[string]Status {
 		"open":       {"Open", "warn", 1},
 		"review":     {"In review", "info", 2},
 		"proposed":   {"Proposed", "info", 3},
+		"recovered":  {"Recovered", "purple", 3}, // found in code by crux-adopt; rationale still to confirm
 		"accepted":   {"Accepted", "ok", 4},
 		"rejected":   {"Rejected", "err", 5},
 		"superseded": {"Superseded", "mute", 6},

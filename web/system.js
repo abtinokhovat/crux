@@ -160,7 +160,12 @@ export function gaps(e) {
   if (e.kind === "entity" && !e.parent) out.push({ k: "info", t: "No owner (owns: on a service, or in:)" });
   const oq = openQuestionsFor(e.id).length;
   if (oq) out.push({ k: "warn", t: `${oq} open question${oq > 1 ? "s" : ""}` });
-  for (const p of S.site.problems.filter((p) => p.file && p.file === e.file)) out.push({ k: p.level === "warn" ? "warn" : "err", t: p.message });
+  const seenMsg = new Set(out.map((x) => x.t));
+  for (const f of (S.site.lint ?? []).filter((f) => f.element === e.id || (f.file && f.file === e.file && !f.element))) {
+    if (f.rule === "inferred" || seenMsg.has(f.message)) continue;
+    seenMsg.add(f.message);
+    out.push({ k: f.level === "error" ? "err" : f.level, t: f.message, fix: f.fix });
+  }
   return out;
 }
 
@@ -369,7 +374,7 @@ function impactHtml(e) {
 function gapsHtml(e) {
   const g = gaps(e);
   if (!g.length) return `<div class="ak-gap ak-gap--ok">✓ Nothing missing</div>`;
-  return `<ul class="ak-gaps">${g.map((x) => `<li class="ak-gap ak-gap--${x.k}">${esc(x.t)}</li>`).join("")}</ul>`;
+  return `<ul class="ak-gaps">${g.map((x) => `<li class="ak-gap ak-gap--${x.k}">${esc(x.t)}${x.fix ? `<code class="ak-gap-fix">${esc(x.fix)}</code>` : ""}</li>`).join("")}</ul>`;
 }
 
 function contractHtml(e) {
@@ -418,7 +423,7 @@ export async function elementPage(view, id, q, loadDoc) {
     panels.push(panel(L(), "Route", routeHtml(e, q.get("step")), { span: 3, meta: `${e.steps?.length ?? 0} steps` }));
   } else if (e.kind === "contract") {
     panels.push(panel(L(), "Who is on each side", contractHtml(e), { span: 3 }));
-  } else if (e.kind !== "question" && e.kind !== "session") {
+  } else if (!["question", "session", "convention"].includes(e.kind) && !(e.kind === "entity" && !linksOut(e.id).length && !linksIn(e.id, "reads", "writes").length)) {
     panels.push(panel(L(), "Connections", egoMap(e), { span: 3, meta: mapLink ? `<a href="${mapLink}">on the map ›</a>` : "" }));
   }
   const iface = interfacesHtml(e);

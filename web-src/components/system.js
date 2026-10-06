@@ -154,7 +154,7 @@ payload: order_id uuid, total money, lines[]
     const prod = c ? [...new Set(links.filter((l) => l.to === c.id && (l.type === "exposes" || l.type === "publishes")).map((l) => l.from))] : [];
     const cons = c ? [...new Set(links.filter((l) => l.to === c.id && (l.type === "uses" || l.type === "consumes")).map((l) => l.from))] : [];
     const cells = kv.map(([k, v]) => {
-      if (/^(payload|fields|body)$/i.test(k)) return `<div class="ak-ct-row ak-ct-row--wide"><dt>${esc(k)}</dt><dd>${v.split(",").map((f) => f.trim()).filter(Boolean).map((f) => { const [n, ...t] = f.split(/\s+/); return `<span class="ak-ct-field"><b>${esc(n)}</b>${t.length ? ` ${esc(t.join(" "))}` : ""}</span>`; }).join("")}</dd></div>`;
+      if (/^(payload|fields|body)$/i.test(k)) return `<div class="ak-ct-row ak-ct-row--wide"><dt>${esc(k)}</dt><dd>${splitTop(v).map((f) => { const [n, ...t] = f.split(/\s+/); return `<span class="ak-ct-field"><b>${esc(n)}</b>${t.length ? ` ${esc(t.join(" "))}` : ""}</span>`; }).join("")}</dd></div>`;
       return `<div class="ak-ct-row"><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`;
     }).join("");
     const sides = c ? `<div class="ak-ct-sides"><div><span>${c.transport === "topic" || c.transport === "queue" ? "published by" : "provided by"}</span>${prod.map(chip).join("") || "—"}</div><div><span>${c.transport === "topic" || c.transport === "queue" ? "consumed by" : "used by"}</span>${cons.map(chip).join("") || "—"}</div></div>` : "";
@@ -204,3 +204,17 @@ export const catalogLegend = {
     return `<div class="ak-catalog">${[...by].map(([c, xs]) => `<div class="ak-catalog-g"><span>${esc(c)}</span>${xs.map(([id, t]) => `<span class="ak-tech tech tech-${cls(id)}">${icon(id, 13)}${esc(t.label)}</span>`).join("")}</div>`).join("")}</div>`;
   },
 };
+
+// Split on commas outside parentheses and brackets: "a uuid, lines[] (sku, qty)" → 2 fields.
+function splitTop(v) {
+  const out = [];
+  let depth = 0, cur = "";
+  for (const ch of String(v)) {
+    if ("([{".includes(ch)) depth++;
+    if (")]}".includes(ch)) depth = Math.max(0, depth - 1);
+    if (ch === "," && depth === 0) { if (cur.trim()) out.push(cur.trim()); cur = ""; continue; }
+    cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}

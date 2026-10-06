@@ -72,18 +72,19 @@ tech:
   sqlc:         { label: sqlc, category: framework, color: "#00ADD8" }
 
   # ── relational ──
-  postgres:    { label: PostgreSQL, category: store, color: "#336791", icon: postgresql, aliases: [postgresql, pg], detect: { go: [github.com/jackc/pgx, github.com/lib/pq], npm: [pg, postgres, "@neondatabase/serverless"], image: [postgres, postgis] } }
-  mysql:       { label: MySQL, category: store, color: "#4479A1", icon: mysql, detect: { go: [github.com/go-sql-driver/mysql], npm: [mysql, mysql2], image: [mysql] } }
+  postgres:    { label: PostgreSQL, category: store, color: "#336791", icon: postgresql, aliases: [postgresql, pg], detect: { go: [github.com/jackc/pgx, github.com/lib/pq], npm: [pg, postgres, "@neondatabase/serverless"], image: [postgres, postgresql, postgis, postgis/postgis, timescale/timescaledb-ha] } }
+  mysql:       { label: MySQL, category: store, color: "#4479A1", icon: mysql, detect: { go: [github.com/go-sql-driver/mysql], npm: [mysql, mysql2], image: [mysql, mysql/mysql-server] } }
   mariadb:     { label: MariaDB, category: store, color: "#003545", icon: mariadb, detect: { npm: [mariadb], image: [mariadb] } }
   sqlite:      { label: SQLite, category: store, color: "#0F80CC", icon: sqlite, detect: { go: [github.com/mattn/go-sqlite3, modernc.org/sqlite], npm: [better-sqlite3, sqlite3] } }
   cockroachdb: { label: CockroachDB, category: store, color: "#6933FF", icon: cockroachlabs, detect: { image: [cockroachdb/cockroach] } }
   sqlserver:   { label: SQL Server, category: store, color: "#CC2927", aliases: [mssql], detect: { npm: [mssql, tedious], image: [mcr.microsoft.com/mssql/server] } }
   clickhouse:  { label: ClickHouse, category: store, color: "#C9A400", icon: clickhouse, detect: { go: [github.com/ClickHouse/clickhouse-go], npm: ["@clickhouse/client"], image: [clickhouse/clickhouse-server] } }
   timescale:   { label: TimescaleDB, category: store, color: "#FDB515", icon: timescale, detect: { image: [timescale/timescaledb] } }
+  influxdb:    { label: InfluxDB, category: store, color: "#22ADF6", icon: influxdb, detect: { go: [github.com/influxdata/influxdb-client-go], npm: ["@influxdata/influxdb-client"], image: [influxdb] } }
   supabase:    { label: Supabase, category: store, color: "#3ECF8E", icon: supabase, detect: { npm: ["@supabase/supabase-js"] } }
 
   # ── documents, key-value, wide column ──
-  mongodb:   { label: MongoDB, category: store, color: "#47A248", icon: mongodb, aliases: [mongo], detect: { go: [go.mongodb.org/mongo-driver], npm: [mongodb, mongoose], image: [mongo] } }
+  mongodb:   { label: MongoDB, category: store, color: "#47A248", icon: mongodb, aliases: [mongo], detect: { go: [go.mongodb.org/mongo-driver], npm: [mongodb, mongoose], image: [mongo, mongodb, mongodb/mongodb-community-server] } }
   dynamodb:  { label: DynamoDB, category: kv, color: "#4053D6", icon: amazondynamodb, detect: { go: [github.com/aws/aws-sdk-go-v2/service/dynamodb], npm: ["@aws-sdk/client-dynamodb"] } }
   cassandra: { label: Cassandra, category: store, color: "#1287B1", icon: apachecassandra, detect: { go: [github.com/gocql/gocql], npm: [cassandra-driver], image: [cassandra] } }
   scylladb:  { label: ScyllaDB, category: store, color: "#53CADD", icon: scylladb, aliases: [scylla], detect: { image: [scylladb/scylla] } }
@@ -91,7 +92,7 @@ tech:
   etcd:      { label: etcd, category: kv, color: "#419EDA", icon: etcd, detect: { go: [go.etcd.io/etcd] } }
 
   # ── cache ──
-  redis:     { label: Redis, category: cache, color: "#D82C20", icon: redis, detect: { go: [github.com/redis/go-redis, github.com/go-redis/redis, github.com/gomodule/redigo], npm: [redis, ioredis, "@upstash/redis"], image: [redis, redis/redis-stack] } }
+  redis:     { label: Redis, category: cache, color: "#D82C20", icon: redis, detect: { go: [github.com/redis/go-redis, github.com/go-redis/redis, github.com/gomodule/redigo], npm: [redis, ioredis, "@upstash/redis"], image: [redis, redis/redis-stack, redis-stack-server] } }
   valkey:    { label: Valkey, category: cache, color: "#2C5DA8", detect: { npm: [iovalkey], image: [valkey/valkey] } }
   memcached: { label: Memcached, category: cache, color: "#2E8B57", detect: { go: [github.com/bradfitz/gomemcache], npm: [memcached], image: [memcached] } }
   dragonfly: { label: Dragonfly, category: cache, color: "#7B3FE4", detect: { image: [docker.dragonflydb.io/dragonflydb/dragonfly] } }
@@ -112,7 +113,7 @@ tech:
   r2:    { label: Cloudflare R2, category: blob, color: "#F38020", icon: cloudflare }
 
   # ── messaging and workflows ──
-  kafka:       { label: Apache Kafka, category: broker, color: "#4B5563", icon: apachekafka, detect: { go: [github.com/segmentio/kafka-go, github.com/twmb/franz-go, github.com/IBM/sarama, github.com/Shopify/sarama, github.com/confluentinc/confluent-kafka-go], npm: [kafkajs, "@confluentinc/kafka-javascript", node-rdkafka], image: [confluentinc/cp-kafka, bitnami/kafka, apache/kafka] } }
+  kafka:       { label: Apache Kafka, category: broker, color: "#4B5563", icon: apachekafka, detect: { go: [github.com/segmentio/kafka-go, github.com/twmb/franz-go, github.com/IBM/sarama, github.com/Shopify/sarama, github.com/confluentinc/confluent-kafka-go], npm: [kafkajs, "@confluentinc/kafka-javascript", node-rdkafka], image: [confluentinc/cp-kafka, bitnami/kafka, apache/kafka, kafka] } }
   redpanda:    { label: Redpanda, category: broker, color: "#E2401B", icon: redpanda, detect: { image: [redpandadata/redpanda, docker.redpanda.com/redpandadata/redpanda] } }
   rabbitmq:    { label: RabbitMQ, category: broker, color: "#FF6600", icon: rabbitmq, aliases: [amqp], detect: { go: [github.com/rabbitmq/amqp091-go, github.com/streadway/amqp], npm: [amqplib, amqp-connection-manager], image: [rabbitmq] } }
   nats:        { label: NATS, category: broker, color: "#27AAE1", icon: natsdotio, detect: { go: [github.com/nats-io/nats.go], npm: [nats], image: [nats] } }
@@ -151,8 +152,14 @@ tech:
   datadog:       { label: Datadog, category: observability, color: "#632CA6", icon: datadog, detect: { go: [gopkg.in/DataDog/dd-trace-go.v1, github.com/DataDog/dd-trace-go], npm: [dd-trace] } }
   sentry:        { label: Sentry, category: observability, color: "#362D59", icon: sentry, detect: { go: [github.com/getsentry/sentry-go], npm: ["@sentry/node", "@sentry/nextjs", "@sentry/react"] } }
   jaeger:        { label: Jaeger, category: observability, color: "#60D0E4", icon: jaeger, detect: { image: [jaegertracing/all-in-one] } }
+  zipkin:        { label: Zipkin, category: observability, color: "#FE7139", detect: { image: [openzipkin/zipkin] } }
+  kibana:        { label: Kibana, category: observability, color: "#E8478B", icon: kibana, detect: { image: [kibana, docker.elastic.co/kibana/kibana] } }
+  logstash:      { label: Logstash, category: observability, color: "#00BFB3", icon: logstash, detect: { image: [logstash, docker.elastic.co/logstash/logstash] } }
+  filebeat:      { label: Filebeat, category: observability, color: "#00BFB3", icon: beats, detect: { image: [filebeat, docker.elastic.co/beats/filebeat] } }
   loki:          { label: Loki, category: observability, color: "#F46800", icon: grafana, detect: { image: [grafana/loki] } }
 
+  consul:      { label: Consul, category: cloud, color: "#E03875", icon: consul, detect: { go: [github.com/hashicorp/consul/api], image: [consul, hashicorp/consul] } }
+  vault:       { label: Vault, category: auth, color: "#1E1E1E", icon: vault, detect: { go: [github.com/hashicorp/vault/api], image: [vault, hashicorp/vault] } }
   # ── cloud and platforms ──
   docker:      { label: Docker, category: cloud, color: "#2496ED", icon: docker }
   kubernetes:  { label: Kubernetes, category: cloud, color: "#326CE5", icon: kubernetes, aliases: [k8s] }

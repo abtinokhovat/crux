@@ -181,7 +181,12 @@ func (c *Catalog) DetectImage(image string) []string {
 	}
 	name = strings.TrimPrefix(name, "docker.io/")
 	name = strings.TrimPrefix(name, "library/")
-	return c.detect(func(d Detect) []string { return d.Image }, func(p string) bool { return name == p })
+	if ids := c.detect(func(d Detect) []string { return d.Image }, func(p string) bool { return name == p }); len(ids) > 0 {
+		return ids
+	}
+	// bitnami/redis, ghcr.io/acme/postgres: match on the last path segment
+	last := name[strings.LastIndex(name, "/")+1:]
+	return c.detect(func(d Detect) []string { return d.Image }, func(p string) bool { return p == last })
 }
 
 func (c *Catalog) detect(get func(Detect) []string, match func(string) bool) []string {

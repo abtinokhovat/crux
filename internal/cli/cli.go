@@ -22,6 +22,8 @@ import (
 	"github.com/abtinokhovat/crux/internal/app"
 	"github.com/abtinokhovat/crux/internal/config"
 	"github.com/abtinokhovat/crux/internal/flow"
+	"github.com/abtinokhovat/crux/internal/lint"
+	"github.com/abtinokhovat/crux/internal/scan"
 	"github.com/abtinokhovat/crux/internal/share"
 	"github.com/abtinokhovat/crux/skills"
 )
@@ -91,7 +93,7 @@ type args struct {
 	flags map[string]string
 }
 
-var valueFlags = map[string]bool{"root": true, "port": true, "host": true, "out": true, "tags": true, "components": true, "status": true, "author": true, "tag": true, "context": true, "due": true, "option": true, "decision": true, "reopen": true, "token": true, "data": true, "agent": true}
+var valueFlags = map[string]bool{"root": true, "port": true, "host": true, "out": true, "tags": true, "components": true, "status": true, "author": true, "tag": true, "context": true, "due": true, "option": true, "decision": true, "reopen": true, "token": true, "data": true, "agent": true, "adapters": true, "kind": true, "in": true, "dir": true, "depth": true, "id": true, "tech": true, "owner": true, "phase": true}
 var short = map[string]string{"o": "out", "c": "context", "h": "help"}
 
 func parse(argv []string) args {
@@ -162,7 +164,7 @@ func init() {
 		"init": cmdInit, "serve": cmdServe, "build": cmdBuild, "new": cmdNew, "next": cmdNext, "list": cmdList, "show": cmdShow,
 		"search": cmdSearch, "lint": cmdLint, "index": cmdIndex, "graph": cmdGraph, "tags": cmdTags, "components": cmdComponents,
 		"q": cmdQ, "notes": cmdNotes, "share": cmdShare, "pull": cmdPull, "finalize": cmdFinalize, "link": cmdLink, "context": cmdContext,
-		"server": cmdServer, "login": cmdLogin, "me": cmdMe, "skill": cmdSkill,
+		"server": cmdServer, "login": cmdLogin, "me": cmdMe, "skill": cmdSkill, "scan": cmdScan, "trace": cmdTrace,
 	}
 }
 
@@ -220,7 +222,7 @@ func cmdInit(a args) error {
 		return os.WriteFile(p, []byte(strings.ReplaceAll(body, "{{name}}", name)), 0o644)
 	}
 	for _, f := range [][2]string{
-		{"crux.config.yaml", "init-config.yaml"}, {"docs/adr/architecture.yaml", "init-architecture.yaml"}, {".crux/template.md", "adr.md"},
+		{"crux.config.yaml", "init-config.yaml"}, {"docs/system/" + adr.Slug(name) + ".md", "init-system.md"}, {".crux/template.md", "adr.md"},
 		{".crux/components/example.mjs", "component.example.mjs"}, {"docs/adr/README.md", "init-readme.md"},
 	} {
 		if err := put(f[0], flow.Template(f[1])); err != nil {
@@ -231,7 +233,7 @@ func cmdInit(a args) error {
 		out("Nothing to do; files exist (use --force to overwrite).")
 		return nil
 	}
-	out("%s created\n  %s\n\nNext: %s, then %s", green("✓"), strings.Join(wrote, "\n  "), bold(`crux q "Which … ?"`), bold("crux serve"))
+	out("%s created\n  %s\n\nNext: %s (or describe services with %s), then %s", green("✓"), strings.Join(wrote, "\n  "), bold(`crux q "Which … ?"`), bold(`crux new service "Orders" --dir services/orders`), bold("crux serve"))
 	return nil
 }
 
@@ -251,7 +253,16 @@ func cmdServe(a args) error {
 	if s.Architecture != nil {
 		comps = len(s.Architecture.Nodes)
 	}
-	out("%s %s  %s\n  %d ADRs · %d docs · %d links · %d tags · %d components\n  watching %s", green("●"), bold(cfg.Title), cyan(url), len(s.Adrs), len(s.Docs), len(s.Edges), len(s.Tags), comps, cfg.Dir)
+	flows, qs := 0, 0
+	for _, e := range s.Elements {
+		switch {
+		case e.Kind == "flow":
+			flows++
+		case e.Kind == "question" && e.State != "answered":
+			qs++
+		}
+	}
+	out("%s %s  %s\n  %d ADRs · %d elements · %d flows · %d open questions · %d links · %d map boxes\n  watching %s", green("●"), bold(cfg.Title), cyan(url), len(s.Adrs), len(s.Elements), flows, qs, len(s.Links)+len(s.Edges), comps, cfg.Root)
 	if len(s.Problems) > 0 {
 		out("  %s — run %s", yellow(fmt.Sprintf("%d problem(s)", len(s.Problems))), bold("crux lint"))
 	}
@@ -294,9 +305,26 @@ func cmdNew(a args) error {
 	if err != nil {
 		return err
 	}
+	if len(a.pos) >= 2 {
+		if k, ok := adr.NormKind(a.pos[0]); ok && k != "adr" && k != "doc" {
+			s := adr.Load(cfg)
+			file, err := flow.NewElement(cfg, s, flow.NewOpts{Kind: k, Title: strings.Join(a.pos[1:], " "), ID: a.flags["id"], In: a.flags["in"], Dir: a.flags["dir"], Tech: a.flags["tech"], Owner: a.flags["owner"], Phase: a.flags["phase"]})
+			if err != nil {
+				return err
+			}
+			if a.has("json") {
+				return jsonOut(map[string]string{"kind": k, "file": file})
+			}
+			out("%s %s  %s", green("✓"), k, file)
+			return nil
+		}
+	}
+	if len(a.pos) > 0 && a.pos[0] == "adr" {
+		a.pos = a.pos[1:]
+	}
 	title := strings.TrimSpace(strings.Join(a.pos, " "))
 	if title == "" {
-		return errors.New(`give a title: crux new "Use Kafka for domain events"`)
+		return errors.New(`give a title: crux new "Use Kafka for domain events", or an element: crux new service "Orders" --dir services/orders`)
 	}
 	s := adr.Load(cfg)
 	id := fmt.Sprintf("%0*d", cfg.Digits, adr.NextNumber(s))
@@ -356,6 +384,32 @@ func cmdList(a args) error {
 		return err
 	}
 	s := adr.Load(cfg)
+	if k := a.flags["kind"]; k != "" && k != "adr" {
+		var els []*adr.Doc
+		for _, e := range s.Elements {
+			if k == "all" || e.Kind == k || (k == "contracts" && e.Kind == "contract") {
+				els = append(els, e)
+			}
+		}
+		if a.has("json") {
+			return jsonOut(els)
+		}
+		if len(els) == 0 {
+			out(dim("No elements of kind " + k + "."))
+		}
+		for _, e := range els {
+			name := e.Title
+			if e.Kind == "contract" {
+				name = e.Name
+			}
+			extra := strings.Join(e.Tech, ",")
+			if e.Origin == "inferred" {
+				extra += " " + yellow("inferred")
+			}
+			out("%s %s %s %s %s", pad(e.Kind, 10), bold(pad(e.ID, 30)), pad(name, 34), dim(pad(e.File, 44)), extra)
+		}
+		return nil
+	}
 	var items []*adr.Doc
 	for _, d := range s.Adrs {
 		if st := a.flags["status"]; st != "" && d.StatusKey != strings.ToLower(st) {
@@ -395,6 +449,9 @@ func cmdShow(a args) error {
 		return err
 	}
 	s := adr.Load(cfg)
+	if x := first(a.pos); x != "" && adr.RefID(x, cfg.Digits) == "" || s.ByID[first(a.pos)] != nil && s.ByID[first(a.pos)].Kind != "adr" {
+		return printTrace(cfg, s, first(a.pos), a)
+	}
 	d, err := getAdr(cfg, s, first(a.pos))
 	if err != nil {
 		return err
@@ -534,38 +591,62 @@ func cmdLint(a args) error {
 		return err
 	}
 	s := adr.Load(cfg)
-	problems := append([]adr.Problem{}, s.Problems...)
-	for _, d := range s.Adrs {
-		if d.Date == "" {
-			problems = append(problems, adr.Problem{File: d.File, Message: "missing date", Level: "warn"})
+	findings := lint.Graph(cfg, s)
+	if a.has("code") {
+		f := scan.Run(cfg, s.Catalog, nil)
+		findings = append(findings, lint.Code(cfg, s, f)...)
+	}
+	if !a.has("info") && !a.has("json") {
+		kept := findings[:0]
+		hidden := 0
+		for _, f := range findings {
+			if f.Level == "info" {
+				hidden++
+				continue
+			}
+			kept = append(kept, f)
 		}
-		if (d.StatusKey == "accepted" || d.StatusKey == "proposed") && deref(d.Facts.Decision) == "" {
-			problems = append(problems, adr.Problem{File: d.File, Message: `no "## Decision" panel with a callout — the UI cannot show the decision`, Level: "warn"})
-		}
-		if d.StatusKey == "open" && deref(d.Facts.Question) == "" {
-			problems = append(problems, adr.Problem{File: d.File, Message: `open ADR without a "## Question" callout`, Level: "warn"})
-		}
-		if len(d.Tags) == 0 {
-			problems = append(problems, adr.Problem{File: d.File, Message: "no tags", Level: "warn"})
-		}
+		defer func(n int) {
+			if n > 0 {
+				out(dim(fmt.Sprintf("%d info finding(s) hidden — --info to show them", n)))
+			}
+		}(hidden)
+		findings = kept
 	}
 	if a.has("json") {
-		return jsonOut(problems)
+		return jsonOut(findings)
 	}
-	errs := 0
-	for _, p := range problems {
+	errs, warns := 0, 0
+	for _, f := range findings {
 		lvl := red("error")
-		if p.Level == "warn" {
+		switch f.Level {
+		case "warn":
 			lvl = yellow("warn ")
-		} else {
+			warns++
+		case "info":
+			lvl = cyan("info ")
+		default:
 			errs++
 		}
-		out("%s %s  %s", lvl, p.File, p.Message)
+		where := f.File
+		if f.Line > 0 {
+			where += fmt.Sprintf(":%d", f.Line)
+		}
+		if where == "" {
+			where = "(code)"
+			if f.Element != "" {
+				where = "(" + f.Element + ", no file)"
+			}
+		}
+		out("%s %s  %s %s", lvl, where, f.Message, dim("["+f.Rule+"]"))
+		if f.Fix != "" {
+			out("      %s %s", dim("fix:"), f.Fix)
+		}
 	}
-	if len(problems) == 0 {
-		out("%s %d ADRs clean", green("✓"), len(s.Adrs))
+	if len(findings) == 0 {
+		out("%s %d ADRs · %d elements clean", green("✓"), len(s.Adrs), len(s.Elements))
 	} else {
-		out("\n%d error(s), %d warning(s)", errs, len(problems)-errs)
+		out("\n%d error(s), %d warning(s)", errs, warns)
 	}
 	if errs > 0 {
 		return exitErr(1)
@@ -903,12 +984,39 @@ func cmdContext(a args) error {
 	if err != nil {
 		return err
 	}
-	list := flow.Context(cfg, adr.Load(cfg), a.pos)
+	s := adr.Load(cfg)
+	list := flow.Context(cfg, s, a.pos)
+	els, conv := flow.SystemContext(s, a.pos)
 	if a.has("json") {
-		return jsonOut(list)
+		return jsonOut(map[string]any{"decisions": list, "elements": els, "conventions": conv})
 	}
-	if len(list) == 0 {
-		out(dim(`No recorded decisions match. If you are about to make one, capture it: crux q "…?"`))
+	if len(list) == 0 && len(els) == 0 {
+		out(dim(`Nothing recorded matches. If you are about to make a hard-to-reverse choice, capture it: crux q "…?"`))
+	}
+	for _, e := range els {
+		origin := ""
+		if e.Origin == "inferred" {
+			origin = yellow(" (inferred — unconfirmed)")
+		}
+		out("%s %s %s%s %s", bold(strings.ToUpper(e.Kind)), bold(e.ID), e.Title, origin, dim("("+strings.Join(e.Matched, ", ")+")"))
+		if e.Summary != "" {
+			out("  %s", e.Summary)
+		}
+		for _, row := range [][2]any{{"exposes", e.Exposes}, {"calls", e.Calls}, {"publishes", e.Publishes}, {"consumes", e.Consumes}, {"data", e.Data}, {"flows", e.Flows}} {
+			if xs := row[1].([]string); len(xs) > 0 {
+				out("  %s %s", pad(row[0].(string)+":", 11), strings.Join(xs, " · "))
+			}
+		}
+		for _, q := range e.Questions {
+			out("  %s %s", yellow("open question:"), q)
+		}
+		out(dim("  " + e.File))
+	}
+	for _, c := range conv {
+		out("%s %s — %s %s", cyan("CONVENTION"), bold(c.ID), firstNonEmpty(c.Summary, c.Title), dim(c.File))
+	}
+	if len(els) > 0 && len(list) > 0 {
+		out("")
 	}
 	for _, d := range list {
 		st := yellow(strings.ToUpper(d.Status))
@@ -1035,7 +1143,7 @@ func cmdSkill(a args) error {
 			continue
 		}
 		seen[base] = true
-		for _, name := range []string{"crux", "answer-me-with-html"} {
+		for _, name := range []string{"crux", "crux-adopt", "crux-design", "crux-model", "crux-build", "answer-me-with-html"} {
 			dest := filepath.Join(base, name)
 			if _, err := os.Stat(dest); err == nil && !a.has("force") {
 				out(dim("skip " + cfg.Rel(dest) + " (exists, --force to overwrite)"))
@@ -1080,3 +1188,242 @@ func firstNonEmpty(v ...string) string {
 }
 
 func today() string { return time.Now().Format("2006-01-02") }
+
+// ── system ──
+
+func cmdScan(a args) error {
+	cfg, err := project(a, true)
+	if err != nil {
+		return err
+	}
+	cat, err := adr.LoadCatalog(cfg)
+	if err != nil {
+		return err
+	}
+	var adapters []string
+	if x := a.flags["adapters"]; x != "" {
+		adapters = strings.Split(x, ",")
+	}
+	f := scan.Run(cfg, cat, adapters)
+	if a.has("json") {
+		return jsonOut(f)
+	}
+	mains := 0
+	for _, m := range f.Modules {
+		if m.Main {
+			mains++
+		}
+	}
+	out("%s %s  %s", bold("scan"), cfg.Root, dim("adapters: "+strings.Join(f.Adapters, ", ")))
+	out("  %d modules (%d entry points) · %d routes · %d topics/queues · %d technologies · %d infra · %d schemas · %d migrations",
+		len(f.Modules), mains, len(f.Routes), len(f.Topics), len(techIDs(f)), len(f.Infra), len(f.Schemas), len(f.Migrations))
+	if len(f.Services) > 0 {
+		out("\n%s", bold(fmt.Sprintf("Deployable candidates (%d)", len(f.Services))))
+		for _, s := range f.Services {
+			out("  %s %s %s %s", pad(s.Kind, 8), bold(pad(s.Name, 28)), pad(s.Dir, 40), dim(strings.Join(s.Evidence, ", ")))
+		}
+	}
+	if len(f.Infra) > 0 {
+		out("\n%s", bold(fmt.Sprintf("Infrastructure (%d)", len(f.Infra))))
+		for _, x := range f.Infra {
+			out("  %s %s %s %s", pad(x.Kind, 8), bold(pad(x.Name, 28)), pad(x.Tech, 14), dim(x.File))
+		}
+	}
+	if ids := techIDs(f); len(ids) > 0 {
+		var labels []string
+		for _, id := range ids {
+			if t := cat.Tech[id]; t != nil {
+				labels = append(labels, t.Label)
+			}
+		}
+		out("\n%s %s", bold("Technologies"), strings.Join(labels, " · "))
+	}
+	if len(f.Topics) > 0 {
+		by := map[string][]string{}
+		var names []string
+		for _, t := range f.Topics {
+			if _, ok := by[t.Name]; !ok {
+				names = append(names, t.Name)
+			}
+			d := map[string]string{"pub": "→", "sub": "←"}[t.Dir]
+			if d == "" {
+				d = "·"
+			}
+			by[t.Name] = append(by[t.Name], d+t.Mod)
+		}
+		sort.Strings(names)
+		out("\n%s", bold(fmt.Sprintf("Topics and queues (%d)", len(names))))
+		for i, n := range names {
+			if i == 40 && !a.has("all") {
+				out(dim(fmt.Sprintf("  … %d more (--all)", len(names)-40)))
+				break
+			}
+			out("  %s %s", pad(n, 40), dim(strings.Join(uniqStr(by[n]), "  ")))
+		}
+	}
+	if len(f.Routes) > 0 {
+		out("\n%s", bold(fmt.Sprintf("Routes (%d)", len(f.Routes))))
+		for i, r := range f.Routes {
+			if i == 30 && !a.has("all") {
+				out(dim(fmt.Sprintf("  … %d more (--all)", len(f.Routes)-30)))
+				break
+			}
+			out("  %s %s %s %s", pad(r.Kind, 7), pad(r.Method, 7), pad(r.Path, 44), dim(fmt.Sprintf("%s:%d", r.File, r.Line)))
+		}
+	}
+	for _, p := range f.Problems {
+		out(yellow("! " + p))
+	}
+	out(dim("\n--json for the full facts (modules, imports, evidence). The adopt skill starts from this."))
+	return nil
+}
+
+func techIDs(f *scan.Facts) []string {
+	seen := map[string]bool{}
+	var ids []string
+	for _, t := range f.Tech {
+		if !seen[t.ID] {
+			seen[t.ID] = true
+			ids = append(ids, t.ID)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func uniqStr(xs []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, x := range xs {
+		if !seen[x] {
+			seen[x] = true
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+func cmdTrace(a args) error {
+	cfg, err := project(a, true)
+	if err != nil {
+		return err
+	}
+	if first(a.pos) == "" {
+		return errors.New("crux trace <element or flow id>")
+	}
+	return printTrace(cfg, adr.Load(cfg), first(a.pos), a)
+}
+
+func printTrace(cfg *config.Config, s *adr.Store, id string, a args) error {
+	t, err := flow.TraceOf(cfg, s, id)
+	if err != nil {
+		return err
+	}
+	if a.has("json") {
+		return jsonOut(t)
+	}
+	where := ""
+	if len(t.Parent) > 0 {
+		where = dim(" in " + strings.Join(t.Parent, " / "))
+	}
+	out("%s %s %s%s", bold(strings.ToUpper(t.Kind)), bold(t.ID), t.Title, where)
+	if t.Summary != "" {
+		out(t.Summary)
+	}
+	if t.Origin == "inferred" {
+		out(yellow("inferred from code — not confirmed yet"))
+	}
+	if t.File != "" {
+		out(dim(t.File))
+	}
+	if len(t.Tech) > 0 {
+		out("tech: %s", strings.Join(t.Tech, ", "))
+	}
+	if len(t.Code) > 0 {
+		out("code: %s", strings.Join(t.Code, ", "))
+	}
+	if len(t.Steps) > 0 {
+		out("\n%s", bold("Steps"))
+		phase := ""
+		for i, st := range t.Steps {
+			if st.Phase != "" && st.Phase != phase {
+				phase = st.Phase
+				out("  %s", dim("== "+phase+" =="))
+			}
+			arrow := "→"
+			if st.Async {
+				arrow = "⇢"
+			}
+			what := strings.TrimSpace(st.Transport + " " + st.Name)
+			if what == "" {
+				what = st.Label
+			}
+			out("  %2d. %s %s %s %s  %s", i+1, pad(st.ID, 10), firstNonEmpty(st.FromID, st.From), arrow, firstNonEmpty(st.ToID, st.To), dim(what))
+			for _, n := range st.Notes {
+				out("        %s", dim("note: "+n))
+			}
+			for _, b := range st.Branches {
+				out("        %s %s → %s", cyan("?"), b.When, b.To)
+			}
+		}
+	}
+	if len(t.Hops) > 0 {
+		out("\n%s", bold("Connections"))
+		for _, h := range t.Hops {
+			arrow := "→"
+			if h.Dir == "in" {
+				arrow = "←"
+			}
+			via := ""
+			if h.Via != "" {
+				via = " via " + h.Via
+			}
+			mode := ""
+			if h.Mode != "" {
+				mode = " [" + h.Mode + "]"
+			}
+			implied := ""
+			if h.Implied {
+				implied = dim(" (derived)")
+			}
+			out("  %s %s %s %s%s%s%s", arrow, pad(h.Type, 11), pad(h.Kind, 9), h.ID, dim(via), dim(mode), implied)
+		}
+	}
+	if len(t.Flows) > 0 {
+		out("\n%s", bold("Flows"))
+		for _, f := range t.Flows {
+			out("  %s %s", bold(f.ID), dim(f.Title))
+			for _, st := range f.Steps {
+				out("    %s", st)
+			}
+		}
+	}
+	if len(t.Decisions) > 0 {
+		out("\n%s", bold("Decisions"))
+		for _, d := range t.Decisions {
+			line := ""
+			if d.Decision != nil {
+				line = *d.Decision
+			} else if d.Question != nil {
+				line = "open: " + *d.Question
+			}
+			out("  %s-%s %s %s", cfg.Prefix, d.ID, d.Title, dim(line))
+		}
+	}
+	if len(t.Questions) > 0 {
+		out("\n%s", yellow("Open questions"))
+		for _, q := range t.Questions {
+			out("  ? %s", q)
+		}
+	}
+	if len(t.Inside) > 0 {
+		out("\n%s %s", bold("Inside"), strings.Join(t.Inside, " · "))
+	}
+	if len(t.Rules) > 0 {
+		out("\n%s", bold("Conventions"))
+		for _, r := range t.Rules {
+			out("  %s", r)
+		}
+	}
+	return nil
+}

@@ -3,5 +3,5 @@ package skills
 
 import "embed"
 
-//go:embed crux answer-me-with-html
+//go:embed crux crux-adopt crux-design crux-model crux-build answer-me-with-html
 var FS embed.FS

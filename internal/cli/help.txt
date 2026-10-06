@@ -1,26 +1,36 @@
-crux — decisions your team and your agents can see
+crux — decisions, systems and flows your team and your agents can see
 
 Usage  crux <command> [options]
 
 Browse
   serve                 Run the app with live reload            [--port 4321] [--host] [--open]
   build [-o dist/adr]   Export a static site (GitHub Pages, S3, nginx)
-  list / show <id> / search <words>                              [--json]
-  graph [--json|--mermaid] · tags · components · next
+  list                  ADRs, or elements with --kind service|flow|contract|…|all   [--status] [--tag] [--json]
+  show <id>             An ADR (number) or an element (id)      [--json]
+  search <words> · graph [--json|--mermaid] · tags · components · next
 
-Decision flow    capture → enrich (your Claude) → shape → share → team review → finalize
+System    any .md file with a "crux: <kind>" header joins the graph
+  new <kind> <title>    An element from a template   kinds: service app job library module context system
+                        actor external store cache broker gateway contract entity flow question session convention
+                                                                [--dir services/orders] [--in parent] [--id x] [--tech go,postgres]
+  trace <id>            Everything around an element or flow: steps, connections, flows, decisions, questions  [--json]
+  scan                  Facts from the code: modules, imports, routes, topics, tech, deployables, infra  [--json] [--all]
+                                                                [--adapters go,ts,infra,"./my-extractor"]
+  context [paths|terms] What is decided and described here — for agents (decisions, elements, conventions)  [--json]
+
+Decision flow    capture → enrich (your agent) → shape → share → team review → finalize
   q <question>          Capture a question as a private Draft   [--notes] [-c "what we know"] [--due D]
   notes <id>            Open it for meeting notes on the share server  [--close] [--import]
   share <id>            Publish for team review (re-run to update)     [--close]
-  pull <id>             Team input → .crux/reviews/<id>.md for you and your Claude
+  pull <id>             Team input → .crux/reviews/<id>.md for you and your agent
   finalize <id>         Accept an option: decision, verdicts, dissent  --option C [--decision "…"] [--reopen "a; b"]
   link <a> <rel> <b>    Link two ADRs, both sides (relates, supersedes, depends_on, amends)
-  context [paths|terms] What is decided here — for agents             [--json]
 
 Project
-  init                  crux.config.yaml, docs/adr, architecture map, template, example component
+  init                  crux.config.yaml, docs/adr, a system file, template, example component
   new <title>           A full ADR from the template            [--open] [--tags a,b] [--components x] [--status S]
-  lint                  Check references, statuses, components, missing decisions
+  lint                  Graph checks: references, flow hops, contracts, code paths, ADR panels   [--info] [--json]
+  lint --code           Also compare with the code: imports, routes, topics, tech, undocumented services
   index                 Rewrite the index table in <dir>/README.md
   skill install         Copy the agent skills into this project  [--agent claude|codex|cursor|gemini|copilot|opencode|all]
                         (default claude → .claude/skills; comma-separate several) [--force]
