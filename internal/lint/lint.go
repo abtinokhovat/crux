@@ -146,6 +146,15 @@ func Graph(cfg *config.Config, s *adr.Store) []Finding {
 			out = append(out, Finding{Rule: "adr-tags", Level: "warn", File: d.File, Message: "no tags"})
 		}
 	}
+	for _, a := range s.Anchors {
+		if a.Err != "" {
+			where := a.Element
+			if a.Where != "" {
+				where += " " + a.Where
+			}
+			out = append(out, Finding{Rule: "anchor", Level: "warn", File: a.Doc, Line: a.DocLine, Element: a.Element, Message: fmt.Sprintf("%s: anchor %s does not resolve — %s", where, a.Ref, a.Err), Fix: "point it at the symbol that does this now (path#Symbol), or remove it"})
+		}
+	}
 	g := newGraph(s)
 	cat := s.Catalog
 	for _, e := range s.Elements {
@@ -217,6 +226,18 @@ func Graph(cfg *config.Config, s *adr.Store) []Finding {
 			if e.Parent == "" {
 				out = append(out, Finding{Rule: "entity-owner", Level: "info", File: e.File, Element: e.ID, Message: fmt.Sprintf("entity %s has no owner (owns: on a service, or in:)", e.ID)})
 			}
+			// a relation into another service's entity means two services share that data
+			for _, l := range s.Links {
+				if l.From != e.ID || (l.Type != "references" && l.Type != "has") {
+					continue
+				}
+				if a, b := serviceOf(s, e.ID), serviceOf(s, l.To); a != "" && b != "" && a != b {
+					out = append(out, Finding{Rule: "entity-boundary", Level: "info", File: e.File, Element: e.ID, Message: fmt.Sprintf("entity %s (%s) %s %s (%s) across a service boundary — keep only the id, or move one of them", e.ID, a, l.Type, l.To, b)})
+				}
+			}
+			if e.Store == "" && e.Parent != "" {
+				out = append(out, Finding{Rule: "entity-store", Level: "info", File: e.File, Element: e.ID, Message: fmt.Sprintf("entity %s: no store found — its owner writes no store (or several); add stored_in:", e.ID)})
+			}
 		}
 		if e.Origin == "inferred" {
 			out = append(out, Finding{Rule: "inferred", Level: "info", File: e.File, Element: e.ID, Message: fmt.Sprintf("%s %s was inferred from code — confirm it (remove origin: inferred) or correct it", e.Kind, e.ID)})
@@ -235,6 +256,16 @@ func Graph(cfg *config.Config, s *adr.Store) []Finding {
 		}
 	}
 	return filter(cfg, out)
+}
+
+// serviceOf is the deployable an element belongs to: itself or its nearest service, app or job.
+func serviceOf(s *adr.Store, id string) string {
+	for d := s.ByID[id]; d != nil; d = s.ByID[d.Parent] {
+		if d.Kind == "service" || d.Kind == "app" || d.Kind == "job" {
+			return d.ID
+		}
+	}
+	return ""
 }
 
 func stepsOf(d *adr.Doc) []adr.Step {
@@ -495,6 +526,21 @@ func Code(cfg *config.Config, s *adr.Store, f *scan.Facts) []Finding {
 		if len(miss) > 0 {
 			out = append(out, Finding{Rule: "code-tech", Level: "info", File: e.File, Element: id, Message: fmt.Sprintf("%s code uses %s — not in its tech: list", id, strings.Join(first(miss, 5), ", ")+more(len(miss)-5))})
 		}
+	}
+	// connections the code makes that no crux file declares (lint.Merge added them)
+	for _, l := range s.Links {
+		if l.Source != "scan" || l.Implied {
+			continue
+		}
+		e := s.ByID[l.From]
+		if e == nil {
+			continue
+		}
+		label := ""
+		if l.Label != "" {
+			label = " (" + l.Label + ")"
+		}
+		out = append(out, Finding{Rule: "code-link-undeclared", Level: "info", File: e.File, Element: e.ID, Message: fmt.Sprintf("code: %s %s %s%s at %s — not in its crux file", l.From, l.Type, l.To, label, l.At), Fix: fmt.Sprintf("add to %s: %s: [{to: %q, at: %s}]", l.From, l.Type, l.To, l.At)})
 	}
 	// coverage: deployables no element describes
 	for _, c := range f.Services {

@@ -13,7 +13,11 @@ System    any .md file with a "crux: <kind>" header joins the graph
   new <kind> <title>    An element from a template   kinds: service app job library module context system
                         actor external store cache broker gateway contract entity flow question session convention
                                                                 [--dir services/orders] [--in parent] [--id x] [--tech go,postgres]
-  trace <id>            Everything around an element or flow: steps, connections, flows, decisions, questions  [--json]
+  extract <list|new|run|trust|path>  Extractors: scripts for a code pattern, kept in crux home (~/.crux), reused on any repo
+  trace <id>            Everything around an element or flow: steps, connections, flows, decisions, questions,
+                        with @ file:line anchors and what the code confirms  [--json] [--no-code]
+  gaps                  What crux saw in the code but could not connect — the agent's work list
+                                                                [--json] [--kind K] [--in <element>] [--all]
   scan                  Facts from the code: modules, imports, routes, topics, tech, deployables, infra  [--json] [--all]
                                                                 [--adapters go,ts,infra,"./my-extractor"]
   context [paths|terms] What is decided and described here — for agents (decisions, elements, conventions)  [--json]
@@ -30,7 +34,8 @@ Project
   init                  crux.config.yaml, docs/adr, a system file, template, example component
   new <title>           A full ADR from the template            [--open] [--tags a,b] [--components x] [--status S]
   lint                  Graph checks: references, flow hops, contracts, code paths, ADR panels   [--info] [--json]
-  lint --code           Also compare with the code: imports, routes, topics, tech, undocumented services
+  lint --code           Also compare with the code: imports, routes, topics, tech, undocumented services,
+                        connections the code makes that no file declares
   index                 Rewrite the index table in <dir>/README.md
   skill install         Copy the agent skills into this project  [--agent claude|codex|cursor|gemini|copilot|opencode|all]
                         (default claude → .claude/skills; comma-separate several) [--force]

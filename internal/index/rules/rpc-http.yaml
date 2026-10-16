@@ -1,0 +1,21 @@
+# RPC and HTTP. Generated gRPC code is recognized by shape: NewXClient(conn), RegisterXServer(server, impl).
+rules:
+  # go-kit builds gRPC clients from a service name and a method name, not from generated code
+  - {id: gokit-grpc-client, match: "github.com/go-kit/kit/transport/grpc.NewClient", role: client-grpc, kind: grpc, tech: grpc, name: 1, key: 2}
+  - {id: grpc-client, match: "*.New*Client", role: client-grpc, kind: grpc, tech: grpc, arg_type: "grpc.ClientConn", service: "^New(.+)Client$"}
+  - {id: grpc-server, match: "*.Register*Server", role: serve-grpc, kind: grpc, tech: grpc, arg_type: "grpc.", service: "^Register(.+)Server$"}
+
+  - {id: http-get,      match: "net/http.Get",        role: call-http, kind: http, name: 0, method: GET}
+  - {id: http-post,     match: "net/http.Post",       role: call-http, kind: http, name: 0, method: POST}
+  - {id: http-newreq,   match: "net/http.NewRequest*", role: call-http, kind: http, name: 1}
+  - {id: http-client-get,  match: "net/http.Client.Get",  role: call-http, kind: http, name: 0, method: GET}
+  - {id: http-client-post, match: "net/http.Client.Post", role: call-http, kind: http, name: 0, method: POST}
+  - {id: resty,         match: "github.com/go-resty/resty/v2.Request.*", role: use, tech: http}
+
+  - {id: http-handle,   match: "net/http.Handle*",         role: route, kind: http, name: 0}
+  - {id: http-mux,      match: "net/http.ServeMux.Handle*", role: route, kind: http, name: 0}
+  - {id: gin-route,     match: "github.com/gin-gonic/gin.RouterGroup.*", role: route, kind: http, name: 0, method: callee}
+  - {id: gin-engine,    match: "github.com/gin-gonic/gin.Engine.*",      role: route, kind: http, name: 0, method: callee}
+  - {id: echo-route,    match: "github.com/labstack/echo/v4.Echo.*",     role: route, kind: http, name: 0, method: callee}
+  - {id: chi-route,     match: "github.com/go-chi/chi/v5.Mux.*",         role: route, kind: http, name: 0, method: callee}
+  - {id: mux-handle,    match: "github.com/gorilla/mux.Router.Handle*",  role: route, kind: http, name: 0}

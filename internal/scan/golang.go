@@ -2,6 +2,7 @@ package scan
 
 import (
 	"bufio"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -12,12 +13,29 @@ import (
 	"strings"
 
 	"github.com/abtinokhovat/crux/internal/catalog"
+	"github.com/abtinokhovat/crux/internal/code"
 	"github.com/abtinokhovat/crux/internal/config"
 )
 
 type patterns struct {
 	topics []*regexp.Regexp
 	routes []*regexp.Regexp
+	pubs   []*regexp.Regexp // lint.publishes: wrappers that publish
+	subs   []*regexp.Regexp // lint.consumes: wrappers that consume
+}
+
+// directed returns the topics a line names through the project's own wrappers.
+func (p patterns) directed(line string) (out [][2]string) {
+	for d, res := range map[string][]*regexp.Regexp{"pub": p.pubs, "sub": p.subs} {
+		for _, re := range res {
+			for _, m := range re.FindAllStringSubmatch(line, -1) {
+				if len(m) > 1 && m[1] != "" {
+					out = append(out, [2]string{m[1], d})
+				}
+			}
+		}
+	}
+	return out
 }
 
 func extraPatterns(cfg *config.Config) patterns {
@@ -32,6 +50,16 @@ func extraPatterns(cfg *config.Config) patterns {
 			p.routes = append(p.routes, re)
 		}
 	}
+	for _, s := range cfg.Lint.Publishes {
+		if re, err := regexp.Compile(s); err == nil {
+			p.pubs = append(p.pubs, re)
+		}
+	}
+	for _, s := range cfg.Lint.Consumes {
+		if re, err := regexp.Compile(s); err == nil {
+			p.subs = append(p.subs, re)
+		}
+	}
 	return p
 }
 
@@ -44,20 +72,23 @@ type goMod struct {
 const goArg = `(?:"([^"]+)"|([A-Za-z_][\w]*(?:\.[A-Za-z_]\w*)?))`
 
 var (
-	goRouteRe   = regexp.MustCompile(`\.(Get|Post|Put|Patch|Delete|Head|Options|GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|Any)\(\s*"(/[^"]*)"`)
-	goHandleRe  = regexp.MustCompile(`\b(?:HandleFunc|Handle)\(\s*"([^"]+)"`)
+	goRouteRe   = regexp.MustCompile(`\.(Get|Post|Put|Patch|Delete|Head|Options|GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|Any)\(\s*"(/[^"]*)"(?:\s*,\s*([A-Za-z_][\w.]*)\s*[,)])?`)
+	goHandleRe  = regexp.MustCompile(`\b(?:HandleFunc|Handle)\(\s*"([^"]+)"(?:\s*,\s*([A-Za-z_][\w.]*)\s*[,)])?`)
 	goMethodsRe = regexp.MustCompile(`\.Methods\(\s*"([A-Z]+)"`)
 	goGRPCRe    = regexp.MustCompile(`\bRegister(\w+)Server\(`)
 	goGQLRe     = regexp.MustCompile(`handler\.NewDefaultServer\(|graphql\.MustParseSchema\(`)
 	goConstRe   = regexp.MustCompile(`^\s*(?:const\s+)?([A-Za-z_]\w*)\s*(?:string\s*)?=\s*"([^"]+)"`)
 	// Constants named like messaging endpoints: FooQueueName, OrderTopic, BillingExchange…
-	goNamedRe    = regexp.MustCompile(`\b(?:([a-z_]\w*)\.)?([A-Za-z_]\w*?(?:QueueName|TopicName|Queue|Topic|Exchange|ExchangeName|RoutingKey|Subject|StreamName|Channel))\b`)
-	goGenerated  = regexp.MustCompile(`^// Code generated .* DO NOT EDIT\.$`)
+	goNamedRe   = regexp.MustCompile(`\b(?:([a-z_]\w*)\.)?([A-Za-z_]\w*?(?:QueueName|TopicName|Queue|Topic|Exchange|ExchangeName|RoutingKey|Subject|StreamName|Channel))\b`)
+	goGenerated = regexp.MustCompile(`^// Code generated .* DO NOT EDIT\.$`)
 	goTopicRes  = []struct {
 		re   *regexp.Regexp
 		dir  string
 		kind string
 	}{
+		// kafka-go: a Message or Writer names the topic it writes, a ReaderConfig the one it reads
+		{regexp.MustCompile(`\bkafka\.(?:Message|Writer)\{[^}]*?\bTopic\s*:\s*` + goArg), "pub", "topic"},
+		{regexp.MustCompile(`\bReaderConfig\{[^}]*?\bTopic\s*:\s*` + goArg), "sub", "topic"},
 		{regexp.MustCompile(`\bTopic\s*:\s*` + goArg), "", "topic"},
 		{regexp.MustCompile(`\bTopics\s*:\s*\[\]string\{\s*` + goArg), "sub", "topic"},
 		{regexp.MustCompile(`\.(?:Publish|PublishMsg|PublishMessage|Produce|ProduceSync|Emit|SendMessage)\(\s*(?:ctx\s*,\s*)?` + goArg), "pub", "topic"},
@@ -201,8 +232,12 @@ func goAdapter(cfg *config.Config, cat *catalog.Catalog, files []string, f *Fact
 		sort.Strings(pk.mod.Imports)
 		sort.Strings(pk.mod.External)
 		usesAsynq := pk.ext["github.com/hibiken/asynq"]
+		from := len(f.Routes)
 		for _, p := range pk.files {
 			scanGoSource(cfg.Abs(p), p, dir, usesAsynq, f, extra, resolve)
+		}
+		if len(f.Routes) > from {
+			goAnchors(cfg, pk.files, f.Routes[from:], f)
 		}
 		f.Modules = append(f.Modules, pk.mod)
 		if pk.mod.Main {
@@ -266,7 +301,7 @@ func scanGoSource(abs, rel, dir string, asynq bool, f *Facts, extra patterns, re
 				if strings.Contains(strings.ToLower(m[2]), "queue") {
 					kind = "queue"
 				}
-				f.Topics = append(f.Topics, Topic{Name: name, Kind: kind, Dir: d, Mod: dir, File: rel, Line: n})
+				f.Topics = append(f.Topics, Topic{Name: name, Kind: kind, Dir: d, Mod: dir, File: rel, Line: n, Guess: d != ""})
 			}
 		}
 		for _, m := range goRouteRe.FindAllStringSubmatch(line, -1) {
@@ -274,7 +309,7 @@ func scanGoSource(abs, rel, dir string, asynq bool, f *Facts, extra patterns, re
 			if method == "ANY" {
 				method = ""
 			}
-			f.Routes = append(f.Routes, Route{Kind: "http", Method: method, Path: m[2], Dir: dir, File: rel, Line: n})
+			f.Routes = append(f.Routes, Route{Kind: "http", Method: method, Path: m[2], Dir: dir, File: rel, Line: n, Handler: m[3]})
 		}
 		for _, m := range goHandleRe.FindAllStringSubmatch(line, -1) {
 			arg := m[1]
@@ -286,7 +321,7 @@ func scanGoSource(abs, rel, dir string, asynq bool, f *Facts, extra patterns, re
 				if mm := goMethodsRe.FindStringSubmatch(line); mm != nil && method == "" {
 					method = mm[1]
 				}
-				f.Routes = append(f.Routes, Route{Kind: "http", Method: method, Path: p, Dir: dir, File: rel, Line: n})
+				f.Routes = append(f.Routes, Route{Kind: "http", Method: method, Path: p, Dir: dir, File: rel, Line: n, Handler: m[2]})
 			} else if asynq {
 				f.Topics = append(f.Topics, Topic{Name: arg, Kind: "queue", Dir: "sub", Mod: dir, File: rel, Line: n})
 			}
@@ -296,14 +331,16 @@ func scanGoSource(abs, rel, dir string, asynq bool, f *Facts, extra patterns, re
 				f.Routes = append(f.Routes, Route{Kind: "grpc", Path: m[1], Dir: dir, File: rel, Line: n})
 			}
 		}
+		wireLine(line, dir, rel, n, goEnvRe, goClientRe, goEnvTagRe, f)
 		if goGQLRe.MatchString(line) {
 			f.Routes = append(f.Routes, Route{Kind: "graphql", Path: "/graphql", Dir: dir, File: rel, Line: n})
 		}
 		for _, tp := range goTopicRes {
 			for _, m := range tp.re.FindAllStringSubmatch(line, -1) {
+				guess := false
 				add := func(lit, ident, d string) {
 					if name := resolve(dir, lit, ident); name != "" && !strings.Contains(name, " ") && len(name) < 120 {
-						f.Topics = append(f.Topics, Topic{Name: name, Kind: tp.kind, Dir: d, Mod: dir, File: rel, Line: n})
+						f.Topics = append(f.Topics, Topic{Name: name, Kind: tp.kind, Dir: d, Mod: dir, File: rel, Line: n, Guess: guess})
 					}
 				}
 				switch tp.dir {
@@ -322,6 +359,7 @@ func scanGoSource(abs, rel, dir string, asynq bool, f *Facts, extra patterns, re
 						case strings.Contains(low, "reader") || strings.Contains(low, "consum") || strings.Contains(low, "subscri") || strings.Contains(low, "group"):
 							d = "sub"
 						}
+						guess = d != ""
 					}
 					add(m[1], m[2], d)
 				}
@@ -330,6 +368,15 @@ func scanGoSource(abs, rel, dir string, asynq bool, f *Facts, extra patterns, re
 		for _, re := range extra.topics {
 			if m := re.FindStringSubmatch(line); len(m) > 1 && m[1] != "" {
 				f.Topics = append(f.Topics, Topic{Name: m[1], Kind: "topic", Mod: dir, File: rel, Line: n})
+			}
+		}
+		for _, x := range extra.directed(line) {
+			name := resolve(dir, "", x[0]) // a constant, when the wrapper is given one
+			if name == "" {
+				name = x[0]
+			}
+			if name != "" {
+				f.Topics = append(f.Topics, Topic{Name: name, Kind: "topic", Dir: x[1], Mod: dir, File: rel, Line: n})
 			}
 		}
 		for _, re := range extra.routes {
@@ -383,4 +430,116 @@ func requireOf(m *goMod, ip string) string {
 		return ip
 	}
 	return best
+}
+
+// GRPCImpl: a Go type that serves a gRPC service — it embeds Unimplemented<Service>Server.
+type GRPCImpl struct {
+	Service string            `json:"service"`
+	Type    string            `json:"type"`
+	Dir     string            `json:"dir"`
+	At      string            `json:"at"`      // the type: path#Type
+	Methods map[string]string `json:"methods"` // rpc name → path#Type.Method
+}
+
+// goAnchors finds, in one package, the functions registered as HTTP handlers and the types that
+// implement registered gRPC services, and anchors the routes to them.
+func goAnchors(cfg *config.Config, files []string, routes []Route, f *Facts) {
+	syms := map[string]map[string]code.Span{} // file → symbols
+	for _, p := range files {
+		if s, err := code.FileSymbols(cfg.Abs(p)); err == nil {
+			syms[p] = s
+		}
+	}
+	// find one symbol across the package: an exact top-level name, else the only method with it
+	find := func(name string, methodsOnly bool) string {
+		var hits []string
+		for _, p := range files {
+			for k := range syms[p] {
+				if (!methodsOnly && k == name) || strings.HasSuffix(k, "."+name) {
+					hits = append(hits, p+"#"+k)
+				}
+			}
+		}
+		if len(hits) == 1 {
+			return hits[0]
+		}
+		return ""
+	}
+	for i := range routes {
+		r := &routes[i]
+		if r.Handler == "" || r.Handler == "nil" {
+			continue
+		}
+		if !strings.Contains(r.Handler, ".") {
+			r.At = find(r.Handler, false)
+		} else {
+			r.At = find(r.Handler[strings.LastIndex(r.Handler, ".")+1:], true) // h.Create: a method value
+		}
+	}
+	served := map[string]bool{}
+	for _, r := range routes {
+		if r.Kind == "grpc" {
+			served[r.Path] = true
+		}
+	}
+	if len(served) == 0 {
+		return
+	}
+	fset := token.NewFileSet()
+	for _, p := range files {
+		af, err := parser.ParseFile(fset, cfg.Abs(p), nil, parser.SkipObjectResolution)
+		if err != nil {
+			continue
+		}
+		for _, d := range af.Decls {
+			g, ok := d.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			for _, sp := range g.Specs {
+				ts, ok := sp.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				st, ok := ts.Type.(*ast.StructType)
+				if !ok {
+					continue
+				}
+				for _, fld := range st.Fields.List {
+					if len(fld.Names) > 0 {
+						continue
+					}
+					name := ""
+					switch x := fld.Type.(type) {
+					case *ast.SelectorExpr:
+						name = x.Sel.Name
+					case *ast.Ident:
+						name = x.Name
+					case *ast.StarExpr:
+						if sel, ok := x.X.(*ast.SelectorExpr); ok {
+							name = sel.Sel.Name
+						}
+					}
+					svc := strings.TrimSuffix(strings.TrimPrefix(name, "Unimplemented"), "Server")
+					if !strings.HasPrefix(name, "Unimplemented") || !served[svc] {
+						continue
+					}
+					impl := GRPCImpl{Service: svc, Type: ts.Name.Name, Dir: path.Dir(p), At: p + "#" + ts.Name.Name, Methods: map[string]string{}}
+					for _, q := range files {
+						for k := range syms[q] {
+							if strings.HasPrefix(k, ts.Name.Name+".") {
+								impl.Methods[strings.TrimPrefix(k, ts.Name.Name+".")] = q + "#" + k
+							}
+						}
+					}
+					f.GRPCImpls = append(f.GRPCImpls, impl)
+					for i := range routes {
+						if routes[i].Kind == "grpc" && routes[i].Path == svc {
+							routes[i].At = impl.At
+						}
+					}
+				}
+			}
+		}
+	}
 }

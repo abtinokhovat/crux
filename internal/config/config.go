@@ -55,14 +55,25 @@ type Config struct {
 type Scan struct {
 	Exclude []string `yaml:"exclude"`
 	Off     bool     `yaml:"off"` // only read dir/docs, like before headers existed
+	// Hints: facts crux cannot read from the code, given once so it can connect the rest.
+	// env: an env var → the element it points at (ORDERS_DSN: orders-db), for values that live
+	// in secrets. names: a name used in manifests or URLs → the element (postgres: orders-db).
+	Env   map[string]string `yaml:"env"`
+	Names map[string]string `yaml:"names"`
+	// Analyzers: language → command of the type-aware analyzer (default: crux-analyze-<lang>).
+	Analyzers map[string]string `yaml:"analyzers"`
 }
 
 // Lint configures the code checks (crux lint --code).
 type Lint struct {
 	Adapters []string `yaml:"adapters"` // go, ts, or a command that prints facts.json
 	Topics   []string `yaml:"topics"`   // extra regexes with one capture group: the topic name
-	Routes   []string `yaml:"routes"`   // extra regexes: (METHOD) and (path) or just (path)
-	Ignore   []string `yaml:"ignore"`   // finding ids or globs to silence
+	// Publishes / Consumes: like topics, for project wrappers whose direction is known
+	// (bus.Emit(ctx, X) publishes X) — crux turns these into connections.
+	Publishes []string `yaml:"publishes"`
+	Consumes  []string `yaml:"consumes"`
+	Routes    []string `yaml:"routes"` // extra regexes: (METHOD) and (path) or just (path)
+	Ignore    []string `yaml:"ignore"` // finding ids or globs to silence
 }
 
 // Flow: Draft (private) → Open → In review (shared) → Accepted | Rejected.
@@ -175,10 +186,10 @@ func merge(dst *Config, src Config) {
 	if src.Catalog != "" {
 		dst.Catalog = src.Catalog
 	}
-	if src.Scan.Exclude != nil || src.Scan.Off {
+	if src.Scan.Exclude != nil || src.Scan.Off || src.Scan.Env != nil || src.Scan.Names != nil {
 		dst.Scan = src.Scan
 	}
-	if src.Lint.Adapters != nil || src.Lint.Topics != nil || src.Lint.Routes != nil || src.Lint.Ignore != nil {
+	if src.Lint.Adapters != nil || src.Lint.Topics != nil || src.Lint.Routes != nil || src.Lint.Ignore != nil || src.Lint.Publishes != nil || src.Lint.Consumes != nil {
 		dst.Lint = src.Lint
 	}
 	dst.Glossary = src.Glossary

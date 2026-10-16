@@ -22,6 +22,7 @@ import (
 	"github.com/abtinokhovat/crux/internal/app"
 	"github.com/abtinokhovat/crux/internal/config"
 	"github.com/abtinokhovat/crux/internal/flow"
+	"github.com/abtinokhovat/crux/internal/home"
 	"github.com/abtinokhovat/crux/internal/lint"
 	"github.com/abtinokhovat/crux/internal/scan"
 	"github.com/abtinokhovat/crux/internal/share"
@@ -164,7 +165,7 @@ func init() {
 		"init": cmdInit, "serve": cmdServe, "build": cmdBuild, "new": cmdNew, "next": cmdNext, "list": cmdList, "show": cmdShow,
 		"search": cmdSearch, "lint": cmdLint, "index": cmdIndex, "graph": cmdGraph, "tags": cmdTags, "components": cmdComponents,
 		"q": cmdQ, "notes": cmdNotes, "share": cmdShare, "pull": cmdPull, "finalize": cmdFinalize, "link": cmdLink, "context": cmdContext,
-		"server": cmdServer, "login": cmdLogin, "me": cmdMe, "skill": cmdSkill, "scan": cmdScan, "trace": cmdTrace,
+		"server": cmdServer, "login": cmdLogin, "me": cmdMe, "skill": cmdSkill, "scan": cmdScan, "extract": cmdExtract, "trace": cmdTrace, "gaps": cmdGaps,
 	}
 }
 
@@ -593,7 +594,7 @@ func cmdLint(a args) error {
 	s := adr.Load(cfg)
 	findings := lint.Graph(cfg, s)
 	if a.has("code") {
-		f := scan.Run(cfg, s.Catalog, nil)
+		_, f, _ := indexed(cfg, s)
 		findings = append(findings, lint.Code(cfg, s, f)...)
 	}
 	if !a.has("info") && !a.has("json") {
@@ -1121,7 +1122,7 @@ var agentOrder = []string{"claude", "codex", "cursor", "gemini", "copilot", "ope
 
 func cmdSkill(a args) error {
 	if first(a.pos) != "install" {
-		return errors.New("crux skill install [--agent claude|codex|cursor|gemini|copilot|opencode|all]")
+		return errors.New("crux skill install [--agent claude|codex|cursor|gemini|copilot|opencode|all] [--global] [--force]")
 	}
 	agents := strings.Split(firstNonEmpty(a.flags["agent"], "claude"), ",")
 	if len(agents) == 1 && agents[0] == "all" {
@@ -1132,13 +1133,24 @@ func cmdSkill(a args) error {
 			return fmt.Errorf("unknown agent %q (one of: %s, all)", ag, strings.Join(agentOrder, ", "))
 		}
 	}
-	cfg, err := project(a, true)
-	if err != nil {
-		return err
+	// --global puts the skills in the user's home, so they work in every repo without touching one
+	root, rel := "", func(p string) string { return p }
+	if a.has("global") {
+		h, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		root = h
+	} else {
+		cfg, err := project(a, true)
+		if err != nil {
+			return err
+		}
+		root, rel = cfg.Root, cfg.Rel
 	}
 	seen := map[string]bool{}
 	for _, ag := range agents {
-		base := filepath.Join(cfg.Root, filepath.FromSlash(skillDirs[strings.TrimSpace(ag)]))
+		base := filepath.Join(root, filepath.FromSlash(skillDirs[strings.TrimSpace(ag)]))
 		if seen[base] {
 			continue
 		}
@@ -1146,7 +1158,7 @@ func cmdSkill(a args) error {
 		for _, name := range []string{"crux", "crux-adopt", "crux-design", "crux-model", "crux-build", "answer-me-with-html"} {
 			dest := filepath.Join(base, name)
 			if _, err := os.Stat(dest); err == nil && !a.has("force") {
-				out(dim("skip " + cfg.Rel(dest) + " (exists, --force to overwrite)"))
+				out(dim("skip " + rel(dest) + " (exists, --force to overwrite)"))
 				continue
 			}
 			err := fs.WalkDir(skills.FS, name, func(p string, e fs.DirEntry, err error) error {
@@ -1163,7 +1175,7 @@ func cmdSkill(a args) error {
 			if err != nil {
 				return err
 			}
-			out("%s %s", green("✓"), cfg.Rel(dest))
+			out("%s %s", green("✓"), rel(dest))
 		}
 	}
 	return nil
@@ -1204,6 +1216,15 @@ func cmdScan(a args) error {
 	if x := a.flags["adapters"]; x != "" {
 		adapters = strings.Split(x, ",")
 	}
+	if a.has("deep") {
+		if adapters == nil {
+			adapters = append(adapters, cfg.Lint.Adapters...)
+		}
+		if len(adapters) == 0 {
+			adapters = []string{"go", "ts", "infra", "extractors"}
+		}
+		adapters = append(adapters, "deep") // explicit: says so when the analyzer is missing
+	}
 	f := scan.Run(cfg, cat, adapters)
 	if a.has("json") {
 		return jsonOut(f)
@@ -1217,6 +1238,8 @@ func cmdScan(a args) error {
 	out("%s %s  %s", bold("scan"), cfg.Root, dim("adapters: "+strings.Join(f.Adapters, ", ")))
 	out("  %d modules (%d entry points) · %d routes · %d topics/queues · %d technologies · %d infra · %d schemas · %d migrations",
 		len(f.Modules), mains, len(f.Routes), len(f.Topics), len(techIDs(f)), len(f.Infra), len(f.Schemas), len(f.Migrations))
+	out("  %d wires · %d env reads · %d hosts · %d gRPC clients · %d tables · %d proto services · %d ingress rules · %d CODEOWNERS rules",
+		len(f.Wires), len(f.Env), len(f.Hosts), len(f.Clients), len(f.Tables), len(f.Protos), len(f.Ingress), len(f.Owners))
 	if len(f.Services) > 0 {
 		out("\n%s", bold(fmt.Sprintf("Deployable candidates (%d)", len(f.Services))))
 		for _, s := range f.Services {
@@ -1278,6 +1301,92 @@ func cmdScan(a args) error {
 	return nil
 }
 
+// cmdExtract manages the extractors in crux's home: scripts written once for a code pattern and
+// reused on every repository that matches.
+func cmdExtract(a args) error {
+	usage := errors.New("crux extract list | new <id> | run <id> [--json] | trust <id> | path")
+	sub := first(a.pos)
+	switch sub {
+	case "path":
+		out("%s", home.Dir())
+		return nil
+	case "new":
+		if len(a.pos) < 2 {
+			return usage
+		}
+		dir, err := home.Scaffold(a.pos[1])
+		if err != nil {
+			return err
+		}
+		out("created %s\n  edit manifest.yaml (when it applies) and extract.py (what it finds), then: crux extract run %s", dir, a.pos[1])
+		return nil
+	case "list", "":
+		ms, err := home.List()
+		if err != nil {
+			return err
+		}
+		if len(ms) == 0 {
+			out("no extractors in %s — crux extract new <id>", home.ExtractorsDir())
+			return nil
+		}
+		var cfg *config.Config
+		var files []string
+		if c, err := project(a, false); err == nil {
+			cfg = c
+			files = projectFiles(c)
+		}
+		for _, m := range ms {
+			state := "needs approval"
+			if m.Trusted() {
+				state = "approved"
+			}
+			here := ""
+			if cfg != nil {
+				here = "not for this repo"
+				if m.Applies(cfg.Root, files) {
+					here = "applies here"
+				}
+			}
+			out("  %s %s %s  %s", bold(pad(m.ID, 24)), pad(state, 15), pad(here, 18), dim(m.Summary))
+		}
+		return nil
+	case "trust", "run":
+		if len(a.pos) < 2 {
+			return usage
+		}
+		m, err := home.Load(filepath.Join(home.ExtractorsDir(), a.pos[1]))
+		if err != nil {
+			return err
+		}
+		if sub == "trust" {
+			out("%s", dim("a script runs with your rights; review it first:"))
+			out("  %s  (%s)", m.Dir, m.Run)
+			if err := m.Trust(); err != nil {
+				return err
+			}
+			out("approved %s@%s", m.ID, m.Hash())
+			return nil
+		}
+		cfg, err := project(a, true)
+		if err != nil {
+			return err
+		}
+		if !m.Trusted() {
+			return fmt.Errorf("%s is not approved in its current form — review it, then: crux extract trust %s", m.ID, m.ID)
+		}
+		g, err := scan.RunExtractor(cfg.Root, m)
+		if err != nil {
+			return err
+		}
+		if a.has("json") {
+			return jsonOut(g)
+		}
+		out("%s on %s: %d topics · %d clients · %d routes · %d tech · %d observations", bold(m.ID), cfg.Root, len(g.Topics), len(g.Clients), len(g.Routes), len(g.Tech), len(g.Obs))
+		return nil
+	}
+	return usage
+}
+
 func techIDs(f *scan.Facts) []string {
 	seen := map[string]bool{}
 	var ids []string
@@ -1311,7 +1420,100 @@ func cmdTrace(a args) error {
 	if first(a.pos) == "" {
 		return errors.New("crux trace <element or flow id>")
 	}
-	return printTrace(cfg, adr.Load(cfg), first(a.pos), a)
+	s := adr.Load(cfg)
+	if !a.has("no-code") {
+		s, _, _ = indexed(cfg, s)
+	}
+	return printTrace(cfg, s, first(a.pos), a)
+}
+
+// indexed adds what the code says to the model: connections, contracts, step and entity
+// anchors crux finds on its own (lint.Derive), merged into the store.
+func indexed(cfg *config.Config, s *adr.Store) (*adr.Store, *scan.Facts, *lint.Derived) {
+	if s == nil {
+		return lint.Index(cfg)
+	}
+	f := scan.Run(cfg, s.Catalog, nil)
+	d := lint.Derive(cfg, s, f)
+	lint.Merge(cfg, s, d)
+	return s, f, d
+}
+
+func cmdGaps(a args) error {
+	cfg, err := project(a, true)
+	if err != nil {
+		return err
+	}
+	s, f, d := indexed(cfg, adr.Load(cfg))
+	gaps := lint.Gaps(cfg, s, f, d)
+	if k := a.flags["kind"]; k != "" {
+		kept := gaps[:0]
+		for _, g := range gaps {
+			if strings.HasPrefix(g.Kind, k) {
+				kept = append(kept, g)
+			}
+		}
+		gaps = kept
+	}
+	if el := a.flags["in"]; el != "" {
+		kept := gaps[:0]
+		for _, g := range gaps {
+			if g.Element == el {
+				kept = append(kept, g)
+			}
+		}
+		gaps = kept
+	}
+	if a.has("json") {
+		if gaps == nil {
+			gaps = []lint.Gap{}
+		}
+		return jsonOut(gaps)
+	}
+	scanned, both := 0, 0
+	for _, l := range s.Links {
+		switch {
+		case l.Source == "scan" && !l.Implied:
+			scanned++
+		case l.Source == "both":
+			both++
+		}
+	}
+	out("%s %d connections found in code (%d confirm declared ones, %d only in code) · %d gaps", bold("crux gaps"), scanned+both, both, scanned, len(gaps))
+	kind := ""
+	shown := 0
+	for _, g := range gaps {
+		if g.Kind != kind {
+			kind = g.Kind
+			shown = 0
+			n := 0
+			for _, x := range gaps {
+				if x.Kind == kind {
+					n++
+				}
+			}
+			out("\n%s %s", bold(kind), dim(fmt.Sprintf("(%d)", n)))
+		}
+		shown++
+		if shown > 12 && !a.has("all") {
+			if shown == 13 {
+				out(dim("  … more (--all, or --kind " + kind + ")"))
+			}
+			continue
+		}
+		where := ""
+		if len(g.Evidence) > 0 {
+			where = dim("  " + strings.Join(g.Evidence, ", "))
+		}
+		out("  %s%s", g.Message, where)
+		out("    %s %s", dim("fix:"), g.Fix)
+	}
+	if len(gaps) == 0 {
+		out("%s nothing left to connect", green("✓"))
+	} else {
+		out(dim("\nEach kind has a procedure in the crux skill (gaps.md). --json for agents; --kind K, --in <element> to narrow."))
+	}
+	return nil
 }
 
 func printTrace(cfg *config.Config, s *adr.Store, id string, a args) error {
@@ -1342,6 +1544,9 @@ func printTrace(cfg *config.Config, s *adr.Store, id string, a args) error {
 	if len(t.Code) > 0 {
 		out("code: %s", strings.Join(t.Code, ", "))
 	}
+	if len(t.At) > 0 {
+		out("at:   %s", strings.Join(t.At, ", "))
+	}
 	if len(t.Steps) > 0 {
 		out("\n%s", bold("Steps"))
 		phase := ""
@@ -1358,12 +1563,20 @@ func printTrace(cfg *config.Config, s *adr.Store, id string, a args) error {
 			if what == "" {
 				what = st.Label
 			}
-			out("  %2d. %s %s %s %s  %s", i+1, pad(st.ID, 10), firstNonEmpty(st.FromID, st.From), arrow, firstNonEmpty(st.ToID, st.To), dim(what))
+			at := ""
+			if st.At != "" {
+				at = cyan("  @ " + st.At)
+			}
+			out("  %2d. %s %s %s %s  %s%s", i+1, pad(st.ID, 10), firstNonEmpty(st.FromID, st.From), arrow, firstNonEmpty(st.ToID, st.To), dim(what), at)
 			for _, n := range st.Notes {
 				out("        %s", dim("note: "+n))
 			}
 			for _, b := range st.Branches {
-				out("        %s %s → %s", cyan("?"), b.When, b.To)
+				at := ""
+				if b.At != "" {
+					at = cyan("  @ " + b.At)
+				}
+				out("        %s %s → %s%s", cyan("?"), b.When, b.To, at)
 			}
 		}
 	}
@@ -1385,6 +1598,15 @@ func printTrace(cfg *config.Config, s *adr.Store, id string, a args) error {
 			implied := ""
 			if h.Implied {
 				implied = dim(" (derived)")
+			}
+			switch h.Source {
+			case "scan":
+				implied += yellow(" (in code, not declared)")
+			case "both":
+				implied += green(" ✓code")
+			}
+			if h.At != "" {
+				implied += cyan("  @ " + h.At)
 			}
 			out("  %s %s %s %s%s%s%s", arrow, pad(h.Type, 11), pad(h.Kind, 9), h.ID, dim(via), dim(mode), implied)
 		}
@@ -1426,4 +1648,12 @@ func printTrace(cfg *config.Config, s *adr.Store, id string, a args) error {
 		}
 	}
 	return nil
+}
+
+// projectFiles lists the project's files (slash paths from the root), as the scanners see them.
+func projectFiles(cfg *config.Config) []string {
+	var files []string
+	adr.WalkProject(cfg, adr.LoadIgnore(cfg), func(abs, rel string, e os.DirEntry) { files = append(files, rel) })
+	sort.Strings(files)
+	return files
 }

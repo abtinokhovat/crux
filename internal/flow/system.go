@@ -129,6 +129,8 @@ type Hop struct {
 	Transport string `json:"transport,omitempty"`
 	Mode      string `json:"mode,omitempty"`
 	Implied   bool   `json:"implied,omitempty"`
+	At        string `json:"at,omitempty"`     // where in the code: file:line
+	Source    string `json:"source,omitempty"` // scan (found in code only) · both (declared and found)
 }
 
 type FlowRef struct {
@@ -146,6 +148,7 @@ type Trace struct {
 	Parent    []string   `json:"in"`
 	Tech      []string   `json:"tech"`
 	Code      []string   `json:"code"`
+	At        []string   `json:"at"` // the element's code anchors, as file:line
 	Origin    string     `json:"origin,omitempty"`
 	Hops      []Hop      `json:"connections"`
 	Flows     []FlowRef  `json:"flows"`
@@ -171,7 +174,19 @@ func TraceOf(cfg *config.Config, s *adr.Store, id string) (*Trace, error) {
 	if e == nil || e.Kind == "adr" || e.Kind == "doc" {
 		return nil, fmt.Errorf("no element %q. Run \"crux list --kind all\"", id)
 	}
-	t := &Trace{ID: e.ID, Kind: e.Kind, Title: e.Title, Summary: e.Subtitle, File: e.File, Tech: orEmpty(e.Tech), Code: orEmpty(e.Code), Origin: e.Origin, Steps: e.Steps, Hops: []Hop{}, Flows: []FlowRef{}, Decisions: []Decision{}, Questions: []string{}, Inside: []string{}, Rules: []string{}, Parent: []string{}}
+	t := &Trace{ID: e.ID, Kind: e.Kind, Title: e.Title, Summary: e.Subtitle, File: e.File, Tech: orEmpty(e.Tech), Code: orEmpty(e.Code), Origin: e.Origin, Steps: e.Steps, At: []string{}, Hops: []Hop{}, Flows: []FlowRef{}, Decisions: []Decision{}, Questions: []string{}, Inside: []string{}, Rules: []string{}, Parent: []string{}}
+	at := anchorIndex(s)
+	for _, ref := range e.At {
+		t.At = append(t.At, at[ref])
+	}
+	if len(e.Steps) > 0 { // steps carry their anchor resolved to file:line
+		t.Steps = append([]adr.Step{}, e.Steps...)
+		for i := range t.Steps {
+			if a := t.Steps[i].At; a != "" {
+				t.Steps[i].At = at[a]
+			}
+		}
+	}
 	seen := map[string]bool{}
 	for p := s.ByID[e.Parent]; p != nil && !seen[p.ID]; p = s.ByID[p.Parent] {
 		seen[p.ID] = true
@@ -196,7 +211,7 @@ func TraceOf(cfg *config.Config, s *adr.Store, id string) (*Trace, error) {
 		if o == nil {
 			continue
 		}
-		t.Hops = append(t.Hops, Hop{Type: l.Type, Dir: dir, ID: o.ID, Kind: o.Kind, Title: firstNonEmptyStr(o.Name, o.Title), Via: l.Via, Transport: l.Transport, Mode: l.Mode, Implied: l.Implied})
+		t.Hops = append(t.Hops, Hop{Type: l.Type, Dir: dir, ID: o.ID, Kind: o.Kind, Title: firstNonEmptyStr(o.Name, o.Title), Via: l.Via, Transport: l.Transport, Mode: l.Mode, Implied: l.Implied, At: firstNonEmptyStr(at[l.At], l.At), Source: l.Source})
 		if o.Kind == "question" && o.State != "answered" {
 			t.Questions = append(t.Questions, o.ID+" — "+o.Title)
 		}
@@ -210,7 +225,11 @@ func TraceOf(cfg *config.Config, s *adr.Store, id string) (*Trace, error) {
 		var steps []string
 		for i, st := range f.Steps {
 			if st.FromID == e.ID || st.ToID == e.ID || st.Contract == e.ID {
-				steps = append(steps, fmt.Sprintf("%d. %s: %s → %s %s", i+1, st.ID, st.FromID, st.ToID, strings.TrimSpace(st.Transport+" "+st.Name)))
+				line := fmt.Sprintf("%d. %s: %s → %s %s", i+1, st.ID, st.FromID, st.ToID, strings.TrimSpace(st.Transport+" "+st.Name))
+				if st.At != "" {
+					line += " @ " + at[st.At]
+				}
+				steps = append(steps, line)
 			}
 		}
 		if len(steps) > 0 {
@@ -239,6 +258,20 @@ func TraceOf(cfg *config.Config, s *adr.Store, id string) (*Trace, error) {
 		}
 	}
 	return t, nil
+}
+
+// anchorIndex maps each anchor as written to where it resolves (file:line), or to itself
+// with the error when it does not.
+func anchorIndex(s *adr.Store) map[string]string {
+	m := map[string]string{}
+	for _, a := range s.Anchors {
+		if a.Err != "" {
+			m[a.Ref] = a.Ref + " (broken: " + a.Err + ")"
+		} else {
+			m[a.Ref] = a.String()
+		}
+	}
+	return m
 }
 
 func codeOverlaps(globs, code []string) bool {

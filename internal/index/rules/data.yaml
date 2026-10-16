@@ -1,0 +1,12 @@
+# Data stores: a call means the entry points that reach it use the store. name = the table or SQL.
+rules:
+  - {id: sql-query, match: "database/sql.DB.*Query*", role: db, kind: sql, tech: sql, name: 0}
+  - {id: sql-exec,  match: "database/sql.DB.Exec*",   role: db, kind: sql, tech: sql, name: 0}
+  - {id: sqlx,      match: "github.com/jmoiron/sqlx.DB.*", role: use, tech: sql}
+  - {id: gorm-open, match: "gorm.io/gorm.Open",       role: use, tech: gorm}
+  - {id: gorm-table, match: "gorm.io/gorm.DB.Table",  role: db, kind: table, tech: gorm, name: 0}
+  - {id: gorm-raw,  match: "gorm.io/gorm.DB.Raw",     role: db, kind: sql, tech: gorm, name: 0}
+  - {id: gorm-exec, match: "gorm.io/gorm.DB.Exec",    role: db, kind: sql, tech: gorm, name: 0}
+  - {id: redis,     match: "github.com/redis/go-redis/v9.NewClient", role: use, tech: redis}
+  - {id: redigo,    match: "github.com/go-redis/redis*.NewClient",   role: use, tech: redis}
+  - {id: mongo,     match: "go.mongodb.org/mongo-driver/mongo.Connect", role: use, tech: mongodb}

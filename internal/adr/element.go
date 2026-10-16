@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/abtinokhovat/crux/internal/catalog"
+	"github.com/abtinokhovat/crux/internal/code"
 	"github.com/abtinokhovat/crux/internal/config"
 )
 
@@ -78,26 +79,29 @@ func NormKind(v string) (string, bool) {
 
 // EdgeTypes: frontmatter keys that declare connections, with how each reads both ways.
 var EdgeTypes = map[string]map[string]string{
-	"calls":      {"label": "calls", "inverse": "called by"},
-	"exposes":    {"label": "exposes", "inverse": "exposed by"},
-	"uses":       {"label": "uses", "inverse": "used by"},
-	"publishes":  {"label": "publishes", "inverse": "published by"},
-	"consumes":   {"label": "consumes", "inverse": "consumed by"},
-	"reads":      {"label": "reads", "inverse": "read by"},
-	"writes":     {"label": "writes", "inverse": "written by"},
-	"owns":       {"label": "owns", "inverse": "owned by"},
-	"depends_on": {"label": "depends on", "inverse": "required by"},
-	"runs_on":    {"label": "runs on", "inverse": "runs"},
-	"implements": {"label": "implements", "inverse": "implemented by"},
-	"decided_by": {"label": "decided by", "inverse": "decides"},
-	"blocked_by": {"label": "blocked by", "inverse": "blocks"},
-	"blocks":     {"label": "blocks", "inverse": "blocked by"},
-	"relates":    {"label": "relates to", "inverse": "relates to"},
+	"calls":       {"label": "calls", "inverse": "called by"},
+	"exposes":     {"label": "exposes", "inverse": "exposed by"},
+	"uses":        {"label": "uses", "inverse": "used by"},
+	"publishes":   {"label": "publishes", "inverse": "published by"},
+	"consumes":    {"label": "consumes", "inverse": "consumed by"},
+	"reads":       {"label": "reads", "inverse": "read by"},
+	"writes":      {"label": "writes", "inverse": "written by"},
+	"owns":        {"label": "owns", "inverse": "owned by"},
+	"depends_on":  {"label": "depends on", "inverse": "required by"},
+	"runs_on":     {"label": "runs on", "inverse": "runs"},
+	"implements":  {"label": "implements", "inverse": "implemented by"},
+	"decided_by":  {"label": "decided by", "inverse": "decides"},
+	"blocked_by":  {"label": "blocked by", "inverse": "blocks"},
+	"blocks":      {"label": "blocks", "inverse": "blocked by"},
+	"relates":     {"label": "relates to", "inverse": "relates to"},
 	"raised_from": {"label": "raised from", "inverse": "raised"},
-	"produced":   {"label": "produced", "inverse": "produced in"},
-	"applies_to": {"label": "applies to", "inverse": "governed by"},
-	"flows":      {"label": "flows through", "inverse": "in flow"},
-	"mentions":   {"label": "mentions", "inverse": "mentioned by"},
+	"produced":    {"label": "produced", "inverse": "produced in"},
+	"applies_to":  {"label": "applies to", "inverse": "governed by"},
+	"flows":       {"label": "flows through", "inverse": "in flow"},
+	"mentions":    {"label": "mentions", "inverse": "mentioned by"},
+	"references":  {"label": "references", "inverse": "referenced by"},
+	"has":         {"label": "has", "inverse": "belongs to"},
+	"stored_in":   {"label": "stored in", "inverse": "stores"},
 }
 
 var edgeAlias = map[string]string{
@@ -112,6 +116,7 @@ var edgeAlias = map[string]string{
 	"implement": "implements", "decided-by": "decided_by", "decisions": "decided_by", "adrs": "decided_by",
 	"blocked-by": "blocked_by", "questions": "blocked_by", "related": "relates", "relates_to": "relates", "see": "relates",
 	"raised-from": "raised_from", "creates": "produced", "outputs": "produced",
+	"stored-in": "stored_in", "persisted_in": "stored_in", "lives_in": "stored_in", "kept_in": "stored_in", "database": "stored_in",
 }
 
 // ── parsing ───────────────────────────────────────────────────────
@@ -126,6 +131,9 @@ type Link struct {
 	Mode      string `json:"mode,omitempty"` // sync | async | stream | data | trigger
 	Label     string `json:"label,omitempty"`
 	Implied   bool   `json:"implied,omitempty"` // derived (e.g. publisher → consumer through a topic)
+	Card      string `json:"card,omitempty"`    // entity relations: 1..n, n..1, n..m…
+	At        string `json:"at,omitempty"`      // code anchor: where this connection happens
+	Source    string `json:"source,omitempty"`  // "" declared · scan: found in code only · both
 }
 
 type Step struct {
@@ -142,16 +150,18 @@ type Step struct {
 	Phase     string   `json:"phase,omitempty"`
 	Notes     []string `json:"notes,omitempty"`
 	Branches  []Branch `json:"branches,omitempty"`
+	At        string   `json:"at,omitempty"` // code anchor: the code that performs the step
 	Line      int      `json:"line"`
 }
 
 type Branch struct {
 	When string `json:"when"`
 	To   string `json:"to"`
+	At   string `json:"at,omitempty"`
 }
 
 type rawRef struct {
-	Type, Target, Via, Transport, Label string
+	Type, Target, Via, Transport, Label, At string
 }
 
 var (
@@ -160,7 +170,17 @@ var (
 	contRe    = regexp.MustCompile(`^([A-Za-z][\w-]*)\s*:\s*(.+)$`)
 	wikiRe    = regexp.MustCompile(`\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]`)
 	httpVerbs = regexp.MustCompile(`(?i)^(get|post|put|patch|delete|head|options)\s+`)
+	// " @ path/file.go#Symbol" at the end of a step, branch or reference: its code anchor
+	atRe = regexp.MustCompile(`\s+@\s*([\w./\-]+(?:#[\w.$]+|:\d+)?)\s*$`)
 )
+
+// cutAt splits a trailing code anchor off a line.
+func cutAt(s string) (string, string) {
+	if m := atRe.FindStringSubmatchIndex(s); m != nil && code.Looks(s[m[2]:m[3]]) {
+		return strings.TrimSpace(s[:m[0]]), s[m[2]:m[3]]
+	}
+	return s, ""
+}
 
 // refsOf reads a frontmatter value as references: "billing", "billing via grpc:Charge",
 // "psp (http)", "topic:order.created", or {to, via, transport, label} maps.
@@ -171,7 +191,9 @@ func refsOf(typ string, v any) []rawRef {
 		if s == "" {
 			return
 		}
-		r := rawRef{Type: typ, Target: s}
+		r := rawRef{Type: typ}
+		s, r.At = cutAt(s)
+		r.Target = s
 		if m := viaRe.FindStringSubmatch(s); m != nil {
 			r.Target, r.Via = strings.TrimSpace(m[1]), strings.TrimSpace(m[2])
 		} else if m := parenRe.FindStringSubmatch(s); m != nil {
@@ -184,7 +206,7 @@ func refsOf(typ string, v any) []rawRef {
 	case []any:
 		for _, e := range x {
 			if m, ok := e.(map[string]any); ok {
-				r := rawRef{Type: typ, Target: Str(firstOf(m["to"], m["id"], m["target"])), Via: Str(firstOf(m["via"], m["contract"])), Transport: Str(m["transport"]), Label: Str(m["label"])}
+				r := rawRef{Type: typ, Target: Str(firstOf(m["to"], m["id"], m["target"])), Via: Str(firstOf(m["via"], m["contract"])), Transport: Str(m["transport"]), Label: Str(m["label"]), At: Str(firstOf(m["at"], m["anchor"], m["code"]))}
 				if r.Target == "" && len(m) == 1 {
 					for k, val := range m { // "- billing: grpc Charge" reads as {billing: "grpc Charge"}
 						r.Target, r.Label = k, Str(val)
@@ -301,6 +323,8 @@ func readElement(d *Doc, kind string, body string, cfg *config.Config, cat *cata
 	d.Origin = strings.ToLower(Str(meta["origin"]))
 	d.Confidence = strings.ToLower(Str(meta["confidence"]))
 	d.Evidence = AsList(meta["evidence"])
+	d.At = AsList(firstOf(meta["at"], meta["anchor"], meta["anchors"]))
+	d.Hosts = AsList(firstOf(meta["hosts"], meta["host"], meta["domains"], meta["domain"]))
 	d.Trigger = Str(meta["trigger"])
 	d.Outcome = Str(meta["outcome"])
 	d.Phase = strings.ToLower(Str(meta["phase"]))
@@ -327,6 +351,10 @@ func readElement(d *Doc, kind string, body string, cfg *config.Config, cat *cata
 	}
 	if kind == "flow" {
 		d.Steps = ParseSteps(stepsText(body), cat)
+	}
+	if kind == "entity" {
+		d.Fields = ParseFields(entityText(body))
+		d.Table = Str(meta["table"])
 	}
 	d.Mentions = mentionsIn(body, cfg, d.ID)
 	for _, m := range wikiRe.FindAllStringSubmatch(body, -1) {
@@ -363,6 +391,8 @@ var (
 //	id: from -> to : transport name     (--> or ~> async)
 //	  ? condition -> step-id | end
 //	note: text
+//
+// Any step or branch may end in " @ path/file.go#Symbol" (or file:line): its code anchor.
 func ParseSteps(text string, cat *catalog.Catalog) []Step {
 	var out []Step
 	phase := ""
@@ -371,12 +401,13 @@ func ParseSteps(text string, cat *catalog.Catalog) []Step {
 		if t == "" || strings.HasPrefix(t, "//") || strings.HasPrefix(t, "#") {
 			continue
 		}
+		t, at := cutAt(t)
 		if m := phaseRe.FindStringSubmatch(t); m != nil {
 			phase = m[1]
 			continue
 		}
 		if m := branchRe.FindStringSubmatch(t); m != nil && len(out) > 0 {
-			out[len(out)-1].Branches = append(out[len(out)-1].Branches, Branch{When: m[1], To: m[2]})
+			out[len(out)-1].Branches = append(out[len(out)-1].Branches, Branch{When: m[1], To: m[2], At: at})
 			continue
 		}
 		if m := noteRe.FindStringSubmatch(t); m != nil && len(out) > 0 {
@@ -387,7 +418,7 @@ func ParseSteps(text string, cat *catalog.Catalog) []Step {
 		if m == nil {
 			continue
 		}
-		s := Step{ID: m[1], From: strings.TrimSpace(m[2]), To: strings.TrimSpace(m[4]), Async: m[3] == "-->" || m[3] == "~>", Phase: phase, Line: i + 1}
+		s := Step{ID: m[1], From: strings.TrimSpace(m[2]), To: strings.TrimSpace(m[4]), Async: m[3] == "-->" || m[3] == "~>", Phase: phase, At: at, Line: i + 1}
 		label := strings.TrimSpace(firstNonEmpty(m[5], m[6]))
 		s.Label = label
 		if label != "" {
@@ -542,7 +573,7 @@ func linkElements(s *Store, cfg *config.Config, cat *catalog.Catalog) {
 		if id := RefID(x, cfg.Digits); id != "" && digitsOnly(x) {
 			return s.ByID[id]
 		}
-		if regexp.MustCompile(`(?i)^`+regexp.QuoteMeta(cfg.Prefix)+`[-\s]?\d+$`).MatchString(strings.TrimSpace(x)) {
+		if regexp.MustCompile(`(?i)^` + regexp.QuoteMeta(cfg.Prefix) + `[-\s]?\d+$`).MatchString(strings.TrimSpace(x)) {
 			return s.ByID[RefID(x, cfg.Digits)]
 		}
 		return nil
@@ -579,7 +610,7 @@ func linkElements(s *Store, cfg *config.Config, cat *catalog.Catalog) {
 			s.Problems = append(s.Problems, Problem{File: from.File, Message: fmt.Sprintf("%s: %q is not a known element, contract or ADR", r.Type, r.Target), Level: "warn"})
 			continue
 		}
-		l := Link{From: from.ID, To: to.ID, Type: r.Type, Label: r.Label}
+		l := Link{From: from.ID, To: to.ID, Type: r.Type, Label: r.Label, At: r.At}
 		if r.Via != "" {
 			if c := find(r.Via); c != nil {
 				l.Via = c.ID
@@ -602,14 +633,14 @@ func linkElements(s *Store, cfg *config.Config, cat *catalog.Catalog) {
 			l.Transport = to.Transport
 		}
 		switch r.Type {
-		case "reads", "writes":
+		case "reads", "writes", "stored_in":
 			l.Mode = "data"
 			if l.Transport == "" {
 				l.Transport = dataTransport(to, cat)
 			}
 		case "publishes", "consumes":
 			l.Mode = "async"
-		case "decided_by", "blocked_by", "blocks", "relates", "raised_from", "produced", "mentions", "owns", "applies_to", "implements", "runs_on", "depends_on":
+		case "decided_by", "blocked_by", "blocks", "relates", "raised_from", "produced", "mentions", "owns", "applies_to", "implements", "runs_on", "depends_on", "references", "has":
 		default:
 			l.Mode = cat.Mode(l.Transport)
 			if l.Mode == "" {
@@ -664,31 +695,7 @@ func linkElements(s *Store, cfg *config.Config, cat *catalog.Catalog) {
 			}
 		}
 	}
-	// a topic everybody publishes to on one broker: put it on that broker when the publisher runs on it
-	for _, d := range s.Elements {
-		if d.Kind == "contract" && d.Parent == "" && (d.Transport == "topic" || d.Transport == "queue") {
-			brokers := map[string]bool{}
-			for _, l := range s.Links {
-				if l.To != d.ID || (l.Type != "publishes" && l.Type != "consumes") {
-					continue
-				}
-				for _, l2 := range s.Links {
-					if l2.From == l.From && (l2.Type == "uses" || l2.Type == "depends_on" || l2.Type == "calls") {
-						if b := s.ByID[l2.To]; b != nil && b.Kind == "broker" {
-							brokers[b.ID] = true
-						}
-					}
-				}
-			}
-			if len(brokers) == 1 {
-				for b := range brokers {
-					d.Parent = b
-				}
-			} else if n := onlyBroker(s.Elements); n != "" {
-				d.Parent = n
-			}
-		}
-	}
+	placeTopics(s)
 	// derived: publisher → consumer through a topic, client → provider through an endpoint
 	providers := map[string][]Link{}
 	for _, l := range s.Links {
@@ -729,6 +736,8 @@ func linkElements(s *Store, cfg *config.Config, cat *catalog.Catalog) {
 			}
 		}
 	}
+	// the domain model: entity relations and the store each entity lives in
+	linkModel(s, find, addLink)
 	// questions: blocked_by on X is "blocks X" on the question
 	for _, d := range s.Elements {
 		if d.Tech == nil {
@@ -771,6 +780,63 @@ func linkElements(s *Store, cfg *config.Config, cat *catalog.Catalog) {
 				}
 			}
 		}
+	}
+}
+
+// placeTopics puts each topic or queue that has no place on its broker: the one broker its
+// publishers and consumers (or their containers) connect to, else the system's only broker.
+func placeTopics(s *Store) {
+	for _, d := range s.Elements {
+		if d.Kind != "contract" || d.Parent != "" || (d.Transport != "topic" && d.Transport != "queue") {
+			continue
+		}
+		brokers := map[string]bool{}
+		for _, l := range s.Links {
+			if l.To != d.ID || (l.Type != "publishes" && l.Type != "consumes") {
+				continue
+			}
+			for p := s.ByID[l.From]; p != nil; p = s.ByID[p.Parent] {
+				for _, l2 := range s.Links {
+					if l2.From == p.ID && (l2.Type == "uses" || l2.Type == "depends_on" || l2.Type == "calls" || l2.Type == "writes" || l2.Type == "reads") {
+						if b := s.ByID[l2.To]; b != nil && b.Kind == "broker" {
+							brokers[b.ID] = true
+						}
+					}
+				}
+				if p.Parent == "" || p.Kind == "context" || p.Kind == "system" {
+					break
+				}
+			}
+		}
+		if len(brokers) == 1 {
+			for b := range brokers {
+				d.Parent = b
+			}
+		} else if n := onlyBroker(s.Elements); n != "" && len(brokers) == 0 {
+			d.Parent = n
+		}
+	}
+}
+
+// Place re-runs the placement that depends on connections — topics on brokers, entities in
+// stores — and rebuilds the map. Call it after adding connections to a loaded store (code
+// derived ones, for instance).
+func (s *Store) Place(cfg *config.Config) {
+	placeTopics(s)
+	seen := map[string]bool{}
+	for _, l := range s.Links {
+		seen[l.From+">"+l.To+">"+l.Type+">"+l.Via] = true
+	}
+	homeEntities(s, func(l Link) {
+		if k := l.From + ">" + l.To + ">" + l.Type + ">" + l.Via; !seen[k] {
+			seen[k] = true
+			s.Links = append(s.Links, l)
+		}
+	})
+	s.Architecture = loadArchitecture(cfg, s)
+	s.Architecture = mergeElements(s.Architecture, s, cfg)
+	if s.Architecture != nil {
+		s.Architecture.computeDeep()
 	}
 }
 

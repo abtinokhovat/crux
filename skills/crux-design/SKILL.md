@@ -37,6 +37,9 @@ system changes. Read `../crux/reference.md` first. The result is crux files, not
    Options (verdict column), Scenarios, and — once the user chose — `crux finalize N --option X
    --decision "…" --reopen "…"`. Smaller choices go into the element files' prose.
 
+Designed elements that have no code yet get `status: planned`. crux does not ask for anchors
+on them until they are built (crux-build adds them).
+
 ## Record the result
 
 Write or update, with `decided_by:` pointing at the ADRs:
@@ -48,8 +51,8 @@ Write or update, with `decided_by:` pointing at the ADRs:
 - **Flows**: one `flow` file per business flow, with ```` ```steps ````, branches for the error
   paths you discussed, `trigger:`, `outcome:`.
 - **Questions** still open, with `blocks:`.
-- **Session**: `crux new session "Design — <topic>"`, `phase: design`, `produced:` every file,
-  and the story: problem, options compared, why the chosen one won, what is open.
+- **Session**: only if the user asks for a record: `crux new session "Design — <topic>"`,
+  `phase: design`, `produced:` every file, and the story. The ADRs and flows are the record.
 
 Then `crux lint` — every flow hop must be a declared connection; fix gaps. Tell the user what
 was written, what is still open, and that `crux serve` → Flows / Map shows it. Suggest

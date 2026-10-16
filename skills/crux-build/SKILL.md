@@ -10,7 +10,8 @@ to the user as questions — never to fill them with assumptions. Read `../crux/
 
 ## Before writing code
 
-1. `crux trace <flow or element>` — steps, hops, contracts, decisions, open questions.
+1. `crux trace <flow or element>` — steps, hops, contracts, decisions, open questions, and
+   `@ file:line` anchors into the existing code. Start reading there.
 2. `crux context <paths you will touch> <terms>` — binding decisions, conventions, elements.
 3. Read every entity, contract and module file the work touches, and the conventions returned.
 4. **Open questions that block this work** (`blocks:` / `blocked_by:`): stop and ask the user to
@@ -31,13 +32,18 @@ to the user as questions — never to fill them with assumptions. Read `../crux/
 - Keep the docs true in the same change: new endpoint → `exposes:`; new publish → `publishes:`;
   new store access → `reads:`/`writes:`; a new service → its crux file; a removed one → remove or
   mark `status: deprecated`. Remove `status: planned` when it exists.
+- **Anchor what you build.** When a flow step's code exists, end the step with
+  ` @ path#Symbol`, unless `crux trace` already shows an anchor crux found. Give new hand-written
+  connections `at:`. Prefer code crux can follow: register handlers by name (not inline
+  closures), use the project's known publish wrappers, and read connection settings from env
+  vars named in `scan.env`.
 
 ## After
 
 1. Run the project's tests and linters.
-2. `crux lint --code --info` — imports between elements, routes, topics and tech must match the
-   crux files. Fix what this change caused.
-3. `crux new session "Build — <flow/element>"` with `phase: build`, `produced:` (elements and
-   flows touched), what was built, questions raised and their state.
+2. `crux lint --code --info` and `crux gaps --in <element>`. Imports between elements, routes,
+   topics, tech and anchors must match the crux files. Fix what this change caused.
+3. Update the visual on each flow or element you changed (a short `steps`/`sequence` block that
+   shows how it works now). No session file unless the user asks.
 4. Tell the user: what was implemented per step, questions raised (answered / open), doc changes,
    and anything you could not verify. Suggest citing ADRs in the commit message. Never commit.

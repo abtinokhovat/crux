@@ -35,10 +35,11 @@ type App struct {
 	store   *adr.Store
 	clients map[chan struct{}]bool
 	cmu     sync.Mutex
+	lmu     sync.Mutex // layout file writes
 }
 
 func New(cfg *config.Config) *App {
-	return &App{cfg: cfg, store: adr.Load(cfg), clients: map[chan struct{}]bool{}}
+	return &App{cfg: cfg, store: load(cfg), clients: map[chan struct{}]bool{}}
 }
 
 func (a *App) Store() *adr.Store {
@@ -47,8 +48,14 @@ func (a *App) Store() *adr.Store {
 	return a.store
 }
 
+// load reads the model and what the code says (connections, anchors, placements crux finds).
+func load(cfg *config.Config) *adr.Store {
+	s, _, _ := lint.Index(cfg)
+	return s
+}
+
 func (a *App) Reload() {
-	s := adr.Load(a.cfg)
+	s := load(a.cfg)
 	a.mu.Lock()
 	a.store = s
 	a.mu.Unlock()
@@ -82,8 +89,59 @@ func (a *App) Site(static bool) map[string]any {
 		"relations": adr.Relations, "adrs": s.Adrs, "docs": s.Docs, "edges": s.Edges, "tags": s.Tags, "architecture": s.Architecture,
 		"elements": s.Elements, "links": s.Links, "catalog": s.Catalog, "kinds": adr.Kinds, "edgeTypes": adr.EdgeTypes, "lint": lint.Graph(a.cfg, s),
 		"problems": s.Problems, "projectComponents": a.projectComponents(), "static": static, "local": !static, "me": a.cfg.Me,
-		"share": map[string]any{"url": a.cfg.Share, "loggedIn": a.cfg.ShareToken != "", "items": share.LoadState(a.cfg)},
+		"layout": a.layout(),
+		"share":  map[string]any{"url": a.cfg.Share, "loggedIn": a.cfg.ShareToken != "", "items": share.LoadState(a.cfg)},
 	}
+}
+
+// ── map layout: where people dragged boxes, per map level, kept in the repo ──
+
+const layoutFile = ".crux/layout.json"
+
+// Layout: map level ("" for the top) → box id → [x, y].
+type Layout map[string]map[string][2]float64
+
+func (a *App) layout() Layout {
+	l := Layout{}
+	if b, err := os.ReadFile(a.cfg.Abs(layoutFile)); err == nil {
+		_ = json.Unmarshal(b, &l)
+	}
+	return l
+}
+
+func (a *App) saveLayout(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("X-Crux") != "1" {
+		writeJSON(w, 403, map[string]string{"error": "forbidden"})
+		return
+	}
+	var body struct {
+		Level     string                `json:"level"`
+		Positions map[string][2]float64 `json:"positions"` // null or empty resets the level
+	}
+	b, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err := json.Unmarshal(b, &body); err != nil {
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	a.lmu.Lock()
+	defer a.lmu.Unlock()
+	l := a.layout()
+	if len(body.Positions) == 0 {
+		delete(l, body.Level)
+	} else {
+		l[body.Level] = body.Positions
+	}
+	out, _ := json.MarshalIndent(l, "", "  ")
+	p := a.cfg.Abs(layoutFile)
+	err := os.MkdirAll(filepath.Dir(p), 0o755)
+	if err == nil {
+		err = os.WriteFile(p, append(out, '\n'), 0o644)
+	}
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, l)
 }
 
 func docPayload(d *adr.Doc) map[string]any { return map[string]any{"meta": d, "source": d.Source} }
@@ -100,6 +158,8 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	switch {
+	case r.Method == http.MethodPost && p == "/api/layout":
+		a.saveLayout(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/"):
 		a.action(w, r)
 	case p == "/api/site":
@@ -411,6 +471,9 @@ func (a *App) watch() {
 			}
 		} else {
 			adr.WalkProject(cfg, adr.LoadIgnore(cfg), func(abs, rel string, e os.DirEntry) {
+				if rel == layoutFile {
+					return // saved from the map itself; the page already shows it
+				}
 				if strings.HasSuffix(abs, ".md") || strings.HasPrefix(rel, ".crux/") && watched.MatchString(abs) || abs == cfg.Abs(cfg.Architecture) || abs == cfg.Abs(cfg.Catalog) {
 					add(abs, e)
 				}

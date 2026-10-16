@@ -2,9 +2,13 @@
 // boxes with a mono tag line, straight arrows clipped at the box border, labels on the line,
 // dashed group frames, and a zoom that grows out of the box you open.
 // Each level shows the children of one node; a leaf (or a node's own band) shows its ADRs.
-import { $, S, esc, gist, href, label, pill, statusLabel, svgEl, tagChip, wrapText } from "./util.js";
+// The level is a canvas: pan by dragging the background or scrolling, zoom with a pinch,
+// ctrl/⌘ + wheel, the buttons or + and −. Boxes are sticky: drag one and the level keeps the
+// layout you see (in .crux/layout.json when served, in this browser for a static site).
+import { $, S, esc, gist, href, label, pill, statusLabel, svgEl, tagChip, toast, wrapText } from "./util.js";
 import { md } from "./vendor/crux-render.js";
-import { decisionsFor, elChip, flowsThrough, kindName, openQuestionsFor, techChip, techOf, techPath } from "./system.js";
+import { bindIde } from "./ide.js";
+import { decisionsFor, elChip, flowsThrough, kindGlyph, kindName, openQuestionsFor, techChip, techOf, techPath } from "./system.js";
 
 const NW = 200, NH = 70, GX = 170, GY = 56;
 const AW = 250, AH = 92, AGX = 120;
@@ -12,6 +16,48 @@ const CHAR_W = 6.7;
 
 // Set by a zoom click so the next level can finish the animation.
 let entering = null;
+// The pan and zoom of each level, so a live reload (or coming back) keeps where you were.
+const viewports = new Map();
+const KMIN = 0.15, KMAX = 3;
+const clampK = (k) => Math.min(KMAX, Math.max(KMIN, k));
+
+// Saved positions of a level: from the repo, with this browser's moves on top for a static site.
+function savedLayout(level) {
+  const repo = S.site.layout?.[level] ?? null;
+  if (S.site.local) return repo;
+  try {
+    const mine = JSON.parse(localStorage.getItem(`crux-layout:${S.site.title}`) ?? "{}")[level];
+    return mine ?? repo;
+  } catch { return repo; }
+}
+
+async function storeLayout(level, positions) {
+  S.site.layout ??= {};
+  if (positions) S.site.layout[level] = positions;
+  else delete S.site.layout[level];
+  if (!S.site.local) {
+    try {
+      const key = `crux-layout:${S.site.title}`;
+      const all = JSON.parse(localStorage.getItem(key) ?? "{}");
+      if (positions) all[level] = positions;
+      else delete all[level];
+      localStorage.setItem(key, JSON.stringify(all));
+    } catch { /* storage off: the layout lasts until the page reloads */ }
+    return;
+  }
+  try {
+    const r = await fetch("api/layout", { method: "POST", headers: { "content-type": "application/json", "x-crux": "1" }, body: JSON.stringify({ level, positions }) });
+    if (!r.ok) throw new Error((await r.json()).error ?? r.statusText);
+  } catch (err) {
+    toast(`Layout not saved: ${err.message}`);
+  }
+}
+
+const bounds = (items, pad = 0) => {
+  const x1 = Math.min(...items.map((n) => n.x)) - pad, y1 = Math.min(...items.map((n) => n.y)) - pad;
+  const x2 = Math.max(...items.map((n) => n.x + n.w)) + pad, y2 = Math.max(...items.map((n) => n.y + n.h)) + pad;
+  return { x: x1, y: y1, w: x2 - x1, h: y2 - y1, x2, y2 };
+};
 
 export function renderMap(root, nodeId, q) {
   const arch = S.site.architecture;
@@ -43,28 +89,57 @@ edges:
   const isAdrLevel = node && !node.children.length;
   const title = node ? node.label : arch.title;
   const hint = isAdrLevel
-    ? "Each box is a decision. Select it to preview; double-click or Enter opens it."
-    : "Select a box to see its decisions. Boxes marked “zoom in ›” open the next level. Zoom out with the button, the breadcrumb, Esc, or a pinch.";
+    ? "Each box is a decision. Select it to preview; double-click or Enter opens it. Drag boxes to arrange them; drag the background to pan; pinch or ctrl + wheel to zoom."
+    : "Select a box to see its decisions; double-click opens the next level. Drag boxes to arrange them — they stay. Drag the background or scroll to pan; pinch, ctrl + wheel or + / − to zoom; 0 fits.";
 
-  root.innerHTML = `<div class="ak-page-head"><div><h1>${esc(title)}</h1><p>${esc(node ? node.sub || node.desc?.split("\n")[0] || "" : arch.desc || "")}</p></div></div>
-<div class="ak-mapbar"><nav class="ak-crumbs" aria-label="Level"><button type="button" data-go=""${!node ? " aria-current" : ""}>${esc(arch.title)}</button>${path.map((n, i) => `<i>/</i><button type="button" data-go="${esc(n.id)}"${i === path.length - 1 ? " aria-current" : ""}>${esc(n.label)}</button>`).join("")}</nav>
-<button class="ak-btn" id="m-out" type="button"${node ? "" : " disabled"}>− Zoom out</button><button class="ak-btn" id="m-in" type="button" disabled>+ Zoom in</button></div>
-<div class="ak-map-layout">
-  <section class="am-panel"><header class="am-panel-head"><span class="am-panel-id">L${path.length}</span><h2>${isAdrLevel ? `${esc(node.label)} — decisions` : esc(title)}</h2><span class="am-panel-meta" id="m-meta"></span></header>
-    <div class="m-canvas"><svg class="ak-canvas" id="m-svg" role="img" aria-label="${esc(title)}"><defs>
-      <marker id="m-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="m-arrow"/></marker>
-      <marker id="m-arr-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="m-arrow m-arrow--hot"/></marker>
-    </defs><g id="m-stage"></g></svg></div>
-    <div class="m-foot">${legend(isAdrLevel)}<div class="ak-maphint">${esc(hint)}</div></div>
-  </section>
-  <aside class="am-panel m-detail" aria-live="polite"><header class="am-panel-head"><span class="am-panel-id">i</span><h2>Details</h2></header><div class="am-panel-body" id="m-detail"></div></aside>
+  // IDE layout under the app header: explorer on the left, the canvas in the middle, details on the right.
+  const chosen = mapUI(); // only what the user toggled is remembered
+  const ui = { legendClosed: innerWidth < 900, ...chosen };
+  const sub = node ? node.sub || node.desc?.split("\n")[0] || "" : arch.desc || "";
+  const flat = !node && !isAdrLevel && canFlatten(arch) && flatPref(q);
+  root.innerHTML = `<div class="ide" data-ide="map">
+<aside class="ide-pane ide-left" aria-label="Explorer"><header class="ide-head"><h2>Explorer</h2><button type="button" class="m-ov-x" data-ide-toggle="l" aria-label="Hide explorer">×</button></header>
+  <input class="ide-search" id="m-find" type="search" placeholder="Find a component…" aria-label="Find a component"><div class="ide-body" id="m-tree"></div></aside>
+<div class="ide-split" data-side="l" role="separator" aria-orientation="vertical"></div>
+<section class="ide-center">
+  <header class="ide-bar">
+    <div class="ide-title">
+      <nav class="ak-crumbs" aria-label="Level"${node ? "" : " hidden"}><button type="button" data-go=""${!node ? " aria-current" : ""}>${esc(arch.title)}</button>${path.map((n, i) => `<i>/</i><button type="button" data-go="${esc(n.id)}"${i === path.length - 1 ? " aria-current" : ""}>${esc(n.label)}</button>`).join("")}</nav>
+      <h1><span class="m-lvl">L${path.length}</span>${isAdrLevel ? `${esc(node.label)} — decisions` : esc(title)}</h1>
+      ${sub ? `<p title="${esc(sub)}">${esc(sub)}</p>` : ""}<div class="m-meta" id="m-meta"></div>
+    </div>
+    <div class="ide-tools" role="toolbar" aria-label="Map">
+      <button class="ak-btn" id="m-flat" type="button"${!node && !isAdrLevel && canFlatten(arch) ? "" : " hidden"} aria-pressed="${flat}" title="Show the services inside every context, or the contexts as boxes">Expand contexts</button>
+      <button class="ak-btn" id="m-out" type="button"${node ? "" : " disabled"} title="Up a level (Esc)">↑ Up</button><button class="ak-btn" id="m-in" type="button" disabled title="Open the selected box (Enter)">Open ›</button>
+      <span class="m-zoom" role="group" aria-label="Canvas zoom"><button class="ak-btn" id="m-zout" type="button" title="Zoom out (−)" aria-label="Zoom out">−</button><button class="ak-btn m-zlvl" id="m-zlvl" type="button" title="Fit (0)">100%</button><button class="ak-btn" id="m-zin" type="button" title="Zoom in (+)" aria-label="Zoom in">+</button></span>
+      <button class="ak-btn" id="m-reset" type="button" title="Forget the arranged layout of this level"${savedLayout(levelKey(node, isAdrLevel, flat)) ? "" : " hidden"}>Reset layout</button>
+      <button class="ak-btn" type="button" data-ide-toggle="l" aria-pressed="true" title="Show or hide the explorer">Explorer</button>
+      <button class="ak-btn" type="button" data-ide-toggle="r" aria-pressed="true" title="Show or hide the details">Details</button>
+    </div>
+  </header>
+  <div class="ide-stage"><div class="m-canvas"><svg class="ak-canvas" id="m-svg" role="img" aria-label="${esc(title)}"><defs>
+    <marker id="m-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="m-arrow"/></marker>
+    <marker id="m-arr-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="m-arrow m-arrow--hot"/></marker>
+  </defs><g id="m-view"><g id="m-stage"></g></g></svg></div></div>
+  <details class="ide-foot m-legend-bar"${ui.legendClosed ? "" : " open"}><summary>Legend and help</summary>${legend(isAdrLevel)}<div class="ak-maphint">${esc(hint)}</div></details>
+</section>
+<div class="ide-split" data-side="r" role="separator" aria-orientation="vertical"></div>
+<aside class="ide-pane ide-right m-detail" id="m-dpanel" aria-live="polite"><header class="ide-head"><h2>Details</h2><button type="button" class="m-ov-x" data-ide-toggle="r" aria-label="Hide details">×</button></header><div class="ide-body m-detail-body" id="m-detail"></div></aside>
 </div>`;
+  const setUI = (k, v) => {
+    if (ui[k] === v) return; // the initial toggle event of <details open> is not a choice
+    ui[k] = chosen[k] = v;
+    try { localStorage.setItem("crux-map-ui", JSON.stringify(chosen)); } catch { /* per visit only */ }
+  };
+  root.querySelector(".ide-foot").addEventListener("toggle", (ev) => setUI("legendClosed", !ev.target.open));
+  root.style.setProperty("--m-top", `${document.querySelector(".ak-top")?.offsetHeight ?? 49}px`);
+  const unbindIde = bindIde(root);
 
   const svg = $("#m-svg");
   const stage = $("#m-stage");
 
   // ── items, edges, layout ──
-  let items = isAdrLevel ? adrItems(node.deep) : nodeItems(node ? node.children : arch.roots);
+  let items = isAdrLevel ? adrItems(node.deep) : nodeItems(node ? node.children : flat ? flatten(arch, arch.roots) : arch.roots, flat);
   const edges = isAdrLevel ? adrEdges(items) : liftedEdges(items);
   // Inner levels: neighbours outside this node appear as ghost boxes, so the flow stays readable.
   // A fully pinned level is hand-drawn; leave it alone.
@@ -73,7 +148,16 @@ edges:
     items = items.concat(g.items);
     edges.push(...g.edges);
   }
-  layout(items, edges);
+  // Shared infra (consul, prometheus, …) that most boxes talk to would bury everything else:
+  // its lines show only while it is selected.
+  const quiet = new Set();
+  if (!isAdrLevel) {
+    const deg = new Map();
+    for (const e of edges) for (const id of [e.from, e.to]) deg.set(id, (deg.get(id) ?? 0) + 1);
+    for (const it of items) if (["infra", "cache"].includes(it.node?.kind) && deg.get(it.id) >= 4) quiet.add(it.id);
+  }
+  for (const e of edges) e.quiet = quiet.has(e.from) || quiet.has(e.to);
+  let lay = layout(items, edges.filter((e) => !e.quiet));
   let band = null;
   if (!isAdrLevel && node?.adrs.length) {
     // A node with children and its own decisions: decisions sit in a band under the components.
@@ -82,58 +166,153 @@ edges:
     grid(own, 0, 4);
     const top = Math.max(...items.map((n) => n.y + n.h)) + 76;
     for (const n of own) n.y += top;
-    band = { y: top - 40, label: `Decisions about ${node.label}` };
+    band = { y: top - 40, label: `Decisions about ${node.label}`, items: own };
     items = items.concat(own);
     edges.push(...ownEdges);
   }
 
-  const pad = 24;
-  const minX = Math.min(...items.map((n) => n.x)) - pad, minY = Math.min(...items.map((n) => n.y)) - pad - (groupsFor(node).length ? 14 : 0);
-  const maxX = Math.max(...items.map((n) => n.x + n.w)) + pad, maxY = Math.max(...items.map((n) => n.y + n.h)) + pad;
-  const vw = Math.max(maxX - minX, 600), vh = maxY - minY;
-  svg.setAttribute("viewBox", `${minX} ${minY} ${vw} ${vh}`);
-  svg.style.minWidth = `${Math.max(Math.min(vw, 760), Math.round(vw * 0.85))}px`;
-  const cx = minX + vw / 2, cy = minY + vh / 2;
+  // ── sticky layout: boxes stay where people dropped them ──
+  const level = levelKey(node, isAdrLevel, flat);
+  const saved = savedLayout(level);
+  if (saved) {
+    const pinned = items.filter((n) => saved[n.id]);
+    if (pinned.length) lay = null; // dragged boxes no longer sit in their rows
+    for (const n of pinned) [n.x, n.y] = saved[n.id];
+    // boxes that are new since the layout was saved line up under it
+    if (pinned.length) {
+      const b = bounds(pinned);
+      let x = b.x;
+      for (const n of items) if (!saved[n.id]) { n.x = x; n.y = b.y2 + GY * 1.6; x += n.w + 40; }
+    }
+  }
 
   const byId = new Map(items.map((n) => [n.id, n]));
-  for (const g of groupsFor(node)) drawGroup(stage, g, byId);
-  if (band) {
-    svgEl("line", { class: "m-band-line", x1: minX + 8, x2: minX + vw - 8, y1: band.y, y2: band.y }, stage);
-    svgEl("text", { class: "m-band", x: minX + pad, y: band.y + 20 }, stage).textContent = band.label.toUpperCase();
-  }
-  const edgeLayer = svgEl("g", {}, stage);
+  let selected = null;
   // Decision cards in the band under the components route among themselves only.
   const straight = (node ? node.lines : S.site.architecture.lines) === "straight";
   const inBand = (n) => !!n.adr && !isAdrLevel;
-  const ends = assignPorts(edges, byId, items);
-  for (const band of [true, false]) {
-    const own = ends.filter((end) => inBand(end.a) === band);
-    routeEdges(own, items.filter((n) => inBand(n) === band), straight);
-  }
-  const pending = ends.map((end) => drawEdge(edgeLayer, end)).filter(Boolean);
-  for (const n of items) (n.adr ? drawAdr : n.ghost ? drawGhost : drawNode)(stage, n);
-  // Labels go last, on top of boxes, placed where they hit no box and no other label.
-  placeLabels(svgEl("g", { class: "m-labels" }, stage), pending, items);
-  $("#m-meta").textContent = isAdrLevel ? `${items.length} decisions` : `${items.filter((n) => !n.adr).length} components · ${node ? node.deep.length : new Set(Object.values(arch.nodes).flatMap((x) => x.adrs)).size} decisions`;
+  const draw = () => {
+    const keep = stage.querySelector(".m-replay-layer");
+    stage.replaceChildren();
+    const b = bounds(items, 24);
+    for (const g of groupsFor(node)) drawGroup(stage, g, byId);
+    if (lay) {
+      const byGrp = new Map();
+      for (const n of items) if (n.ctx) byGrp.set(n.ctx.label, [...(byGrp.get(n.ctx.label) ?? []), n]);
+      for (const [name, ns] of byGrp) {
+        const x = Math.min(...ns.map((n) => n.x)) - 16, y = Math.min(...ns.map((n) => n.y)) - 34;
+        const w = Math.max(...ns.map((n) => n.x + n.w)) + 16 - x, h = Math.max(...ns.map((n) => n.y + n.h)) + 16 - y;
+        const g = svgEl("g", { class: "m-ctxframe" }, stage);
+        svgEl("rect", { x, y, width: w, height: h, style: `--c:${ns[0].ctx.color}` }, g);
+        svgEl("text", { x: x + 12, y: y + 20, style: `fill:${ns[0].ctx.color}` }, g).textContent = name.toUpperCase();
+      }
+    }
+    if (lay?.tiers.length) {
+      // each tier is a framed block; context frames sit inside Process
+      const frames = TIERS.map((t, i) => ({ t, ns: items.filter((n) => tierOf(n) === i) })).filter((f) => f.ns.length);
+      const tf = [];
+      for (const { t, ns } of frames) {
+        const x = Math.min(...ns.map((n) => n.x)) - 40, y = Math.min(...ns.map((n) => n.y)) - 74;
+        const w = Math.max(...ns.map((n) => n.x + n.w)) + 40 - x, h = Math.max(...ns.map((n) => n.y + n.h)) + 28 - y;
+        tf.push({ t, x, y, w, h });
+      }
+      const top = Math.min(...tf.map((f) => f.y)), bot = Math.max(...tf.map((f) => f.y + f.h));
+      for (const f of tf) { // one height per tier, so the four blocks read as a row
+        const g = svgEl("g", { class: "m-tierframe" }, stage);
+        svgEl("rect", { x: f.x, y: top, width: f.w, height: bot - top }, g);
+        svgEl("text", { x: f.x + 14, y: top + 22 }, g).textContent = f.t.label.toUpperCase();
+      }
+      stage.prepend(...[...stage.querySelectorAll(".m-tierframe")]);
+    }
+    if (band) {
+      const y = Math.min(...band.items.map((n) => n.y)) - 36;
+      svgEl("line", { class: "m-band-line", x1: b.x + 8, x2: b.x2 - 8, y1: y, y2: y }, stage);
+      svgEl("text", { class: "m-band", x: b.x + 24, y: y + 20 }, stage).textContent = band.label.toUpperCase();
+    }
+    const edgeLayer = svgEl("g", {}, stage);
+    const rowed = (n) => lay && n.band != null; // boxes in the tier rows; decision cards route among themselves
+    const act = edges.filter((e) => !e.quiet || e.from === selected || e.to === selected);
+    const ends = assignPorts(act, byId, items, !!lay);
+    routeTiered(ends.filter((end) => rowed(end.a) && rowed(end.b)), lay);
+    const rest = ends.filter((end) => !(rowed(end.a) && rowed(end.b)));
+    for (const inside of [true, false]) {
+      const own = rest.filter((end) => inBand(end.a) === inside);
+      routeEdges(own, items.filter((n) => inBand(n) === inside), straight);
+    }
+    stage.classList.toggle("m-dense", act.length > 24);
+    const pending = ends.map((end) => drawEdge(edgeLayer, end)).filter(Boolean);
+    for (const n of items) (n.adr ? drawAdr : n.ghost ? drawGhost : drawNode)(stage, n);
+    // Labels go last, on top of boxes, placed where they hit no box and no other label.
+    placeLabels(svgEl("g", { class: "m-labels" }, stage), pending, items);
+    if (keep) stage.append(keep);
+    paint();
+  };
+  $("#m-meta").textContent = isAdrLevel ? `${items.length} decisions` : `${items.filter((n) => !n.adr).length} components · ${node ? node.deep.length : new Set(Object.values(arch.nodes).flatMap((x) => x.adrs)).size} decisions${quiet.size ? ` · lines to ${[...quiet].map((id) => byId.get(id).node.label).join(", ")} show when selected` : ""}`;
 
-  // ── entrance: finish the zoom started on the previous level ──
+  // ── viewport: pan and zoom ──
+  const canvas = root.querySelector(".m-canvas");
+  const view = $("#m-view");
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let vp = { k: 1, tx: 0, ty: 0 };
+  let leaving = false; // the exit zoom must not overwrite where this level was
+  const apply = () => {
+    view.setAttribute("transform", `translate(${vp.tx.toFixed(1)} ${vp.ty.toFixed(1)}) scale(${vp.k.toFixed(4)})`);
+    $("#m-zlvl").textContent = `${Math.round(vp.k * 100)}%`;
+    if (!leaving) viewports.set(level, vp);
+  };
+  // Fit the whole level into the canvas.
+  const fitted = () => {
+    const b = bounds(items, 32);
+    const c = canvas.getBoundingClientRect();
+    const W = c.width || 800, H = c.height || 520;
+    const m = 16;
+    const fw = Math.max(200, W - 2 * m), fh = Math.max(160, H - 2 * m);
+    const k = clampK(Math.min(fw / b.w, fh / b.h, 1.15));
+    return { k, tx: m + (fw - b.w * k) / 2 - b.x * k, ty: m + (fh - b.h * k) / 2 - b.y * k };
+  };
+  let anim = 0;
+  const animate = (to, ms, done) => {
+    cancelAnimationFrame(anim);
+    if (reduce || !ms) { vp = to; apply(); return done?.(); }
+    const from = vp, t0 = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - t, 3);
+      vp = { k: from.k + (to.k - from.k) * e, tx: from.tx + (to.tx - from.tx) * e, ty: from.ty + (to.ty - from.ty) * e };
+      apply();
+      if (t < 1) anim = requestAnimationFrame(step);
+      else done?.();
+    };
+    anim = requestAnimationFrame(step);
+  };
+  // scale the view by f around a point on the canvas (in canvas pixels)
+  const scaled = (f, px, py, from = vp) => {
+    const k = clampK(from.k * f), r = k / from.k;
+    return { k, tx: px - (px - from.tx) * r, ty: py - (py - from.ty) * r };
+  };
+  const zoomBy = (f, px = canvas.clientWidth / 2, py = canvas.clientHeight / 2, ms = 160) => animate(scaled(f, px, py), ms);
+  const fit = (ms = 220) => animate(fitted(), ms);
+  const toScreen = (x, y) => [x * vp.k + vp.tx, y * vp.k + vp.ty];
+
+  draw();
+  // ── entrance: finish the zoom started on the previous level ──
+  const target = viewports.get(level) ?? fitted();
   if (entering && !reduce) {
-    stage.style.transition = "none";
-    stage.style.transformOrigin = `${cx}px ${cy}px`;
-    stage.style.transform = entering === "in" ? "scale(0.6)" : "scale(1.6)";
+    const W = canvas.clientWidth / 2, H = canvas.clientHeight / 2;
+    vp = scaled(entering === "in" ? 0.6 : 1.6, W, H, target);
+    apply();
     stage.style.opacity = "0";
     stage.getBoundingClientRect();
-    stage.style.transition = "";
-    stage.style.transform = "scale(1)";
     stage.style.opacity = "1";
+    animate(target, 300);
+  } else {
+    vp = target;
+    apply();
   }
   entering = null;
 
   // ── selection ──
-  let selected = null;
-  const select = (id) => {
-    selected = id && byId.has(id) ? id : null;
+  // paint: selection classes on the drawn boxes and lines (again after every redraw)
+  function paint() {
     const near = new Set(selected ? [selected] : []);
     for (const e of edges) if (e.from === selected || e.to === selected) { near.add(e.from); near.add(e.to); }
     for (const el of stage.querySelectorAll(".m-node")) {
@@ -150,6 +329,10 @@ edges:
       if (p.hasAttribute("marker-end")) p.setAttribute("marker-end", on ? "url(#m-arr-hot)" : "url(#m-arr)");
       if (p.hasAttribute("marker-start")) p.setAttribute("marker-start", on ? "url(#m-arr-hot)" : "url(#m-arr)");
     }
+  }
+  let select = (id) => {
+    selected = id && byId.has(id) ? id : null;
+    quiet.size ? draw() : paint();
     const it = selected && byId.get(selected);
     $("#m-detail").innerHTML = it?.ghost ? ghostDetail(it.ghost) : it?.adr ? adrDetail(it.adr) : isAdrLevel ? nodeDetail(node, false) : nodeDetail(selected ? arch.nodes[selected] : node, !!selected);
     $("#m-in").disabled = !(it && (it.adr || it.ghost || drillable(it.node) || it.node?.doc));
@@ -159,9 +342,9 @@ edges:
     if (target == null) return;
     const hash = target ? `#/map/${encodeURIComponent(target)}` : "#/map";
     if (reduce) return void (location.hash = hash);
-    const origin = from ? [from.x + from.w / 2, from.y + from.h / 2] : [cx, cy];
-    stage.style.transformOrigin = `${origin[0]}px ${origin[1]}px`;
-    stage.style.transform = dir === "in" ? "scale(2.4)" : "scale(0.5)";
+    const [px, py] = from ? toScreen(from.x + from.w / 2, from.y + from.h / 2) : [canvas.clientWidth / 2, canvas.clientHeight / 2];
+    leaving = true; // coming back finds the level as it was
+    animate(scaled(dir === "in" ? 2.4 : 0.5, px, py), 280);
     stage.style.opacity = "0";
     entering = dir;
     setTimeout(() => (location.hash = hash), 280);
@@ -176,7 +359,9 @@ edges:
   const zoomOut = () => node && go(node.parent ?? "", "out");
 
   // Click selects; clicking the selected box again zooms into it (or opens the decision).
+  let dragged = false;
   svg.addEventListener("click", (ev) => {
+    if (dragged) return void (dragged = false);
     const id = ev.target.closest(".m-node")?.dataset.id ?? null;
     if (id && id === selected) zoomIn(id);
     else select(id);
@@ -192,18 +377,95 @@ edges:
     if (selected === g.dataset.id) zoomIn(g.dataset.id);
     else select(g.dataset.id);
   });
-  // Pinch on a trackpad (ctrl + wheel): out goes up a level, in opens the box under the pointer.
-  let wheelLock = 0;
+  // ── canvas gestures ──
+  // Wheel or two-finger scroll pans; a pinch (ctrl + wheel on a trackpad) or ctrl/⌘ + wheel zooms
+  // around the pointer.
+  const at = (ev) => { const r = svg.getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; };
   svg.addEventListener("wheel", (ev) => {
-    if (!ev.ctrlKey && !ev.metaKey) return;
     ev.preventDefault();
-    const now = Date.now();
-    if (now < wheelLock || Math.abs(ev.deltaY) < 4) return;
-    wheelLock = now + 700;
-    if (ev.deltaY > 0) return zoomOut();
-    const g = ev.target.closest(".m-node");
-    if (g) zoomIn(g.dataset.id);
+    const unit = ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? canvas.clientHeight : 1;
+    if (ev.ctrlKey || ev.metaKey) {
+      const [px, py] = at(ev);
+      cancelAnimationFrame(anim);
+      vp = scaled(Math.exp(-ev.deltaY * unit * 0.0025), px, py);
+    } else {
+      vp = { ...vp, tx: vp.tx - ev.deltaX * unit, ty: vp.ty - ev.deltaY * unit };
+    }
+    apply();
   }, { passive: false });
+  // Pointer: drag a box to move it (it stays there), drag the background to pan, two fingers to
+  // pinch. A press that does not move stays a click.
+  const pointers = new Map();
+  let drag = null, frame = 0;
+  const redraw = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; draw(); }); };
+  svg.addEventListener("pointerdown", (ev) => {
+    if (ev.pointerType === "mouse" && ev.button !== 0) return;
+    dragged = false;
+    pointers.set(ev.pointerId, at(ev));
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      drag = { pinch: true, d0: Math.hypot(a[0] - b[0], a[1] - b[1]), vp0: vp, mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], moved: true };
+      return;
+    }
+    const g = ev.target.closest(".m-node");
+    const it = g ? byId.get(g.dataset.id) : null;
+    const [px, py] = at(ev);
+    drag = { it, px, py, x0: it?.x, y0: it?.y, vp0: vp, moved: false, id: ev.pointerId };
+  });
+  svg.addEventListener("pointermove", (ev) => {
+    if (!pointers.has(ev.pointerId) || !drag) return;
+    pointers.set(ev.pointerId, at(ev));
+    if (drag.pinch) {
+      if (pointers.size < 2) return;
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      vp = scaled(d / drag.d0, drag.mid[0], drag.mid[1], drag.vp0);
+      return apply();
+    }
+    const [px, py] = at(ev);
+    const dx = px - drag.px, dy = py - drag.py;
+    if (!drag.moved) {
+      if (Math.hypot(dx, dy) < 4) return;
+      drag.moved = true;
+      svg.setPointerCapture(ev.pointerId);
+      canvas.classList.add(drag.it ? "is-moving" : "is-panning");
+    }
+    if (drag.it) {
+      drag.it.x = drag.x0 + dx / vp.k;
+      drag.it.y = drag.y0 + dy / vp.k;
+      redraw();
+    } else {
+      vp = { ...drag.vp0, tx: drag.vp0.tx + dx, ty: drag.vp0.ty + dy };
+      apply();
+    }
+  });
+  const release = (ev) => {
+    pointers.delete(ev.pointerId);
+    if (!drag || (drag.pinch && pointers.size)) return;
+    if (drag.moved) {
+      dragged = ev.type === "pointerup";
+      if (drag.it) {
+        settle(drag.it, items);
+        draw();
+        storeLayout(level, Object.fromEntries(items.map((n) => [n.id, [Math.round(n.x), Math.round(n.y)]])));
+        $("#m-reset").hidden = false;
+      }
+    }
+    canvas.classList.remove("is-moving", "is-panning");
+    drag = null;
+  };
+  svg.addEventListener("pointerup", release);
+  svg.addEventListener("pointercancel", release);
+  $("#m-zin").addEventListener("click", () => zoomBy(1.25));
+  $("#m-zout").addEventListener("click", () => zoomBy(0.8));
+  $("#m-zlvl").addEventListener("click", () => fit());
+  $("#m-reset").addEventListener("click", async () => {
+    await storeLayout(level, null);
+    viewports.delete(level);
+    dispatchEvent(new HashChangeEvent("hashchange"));
+  });
+  const onResize = () => { if (!viewports.has(level)) fit(0); };
+  addEventListener("resize", onResize);
   root.querySelector(".ak-crumbs").addEventListener("click", (ev) => {
     const b = ev.target.closest("button[data-go]");
     if (b && !b.hasAttribute("aria-current")) go(b.dataset.go, "out");
@@ -219,8 +481,9 @@ edges:
   const onKey = (ev) => {
     if (document.querySelector(".ak-palette") || /input|textarea/i.test(document.activeElement?.tagName)) return;
     if (ev.key === "Escape") selected ? select(null) : zoomOut();
-    else if (ev.key === "-" || ev.key === "_") zoomOut();
-    else if (ev.key === "+" || ev.key === "=") zoomIn();
+    else if (ev.key === "-" || ev.key === "_") zoomBy(0.8);
+    else if (ev.key === "+" || ev.key === "=") zoomBy(1.25);
+    else if (ev.key === "0") fit();
   };
   addEventListener("keydown", onKey);
   // Decision impact: hovering a decision (band card, detail row, any reference) lights the boxes
@@ -250,10 +513,113 @@ edges:
     root.querySelector(".m-canvas")?.before(bar);
     impact(pinned);
   }
+  // ── explorer: every component as a tree; a click finds it on the canvas or opens the level it lives on ──
+  const tree = $("#m-tree");
+  const kids = (n) => n.children.map((id) => arch.nodes[id]).filter(Boolean);
+  const startOpen = new Set(path.map((n) => n.id));
+  if (flat) for (const id of arch.roots) if (CONTAINER.has(arch.nodes[id]?.kind)) startOpen.add(id);
+  const row = (n) => {
+    const ks = kids(n);
+    return `<li data-id="${esc(n.id)}" data-text="${esc(`${n.label} ${n.kind} ${n.tech ?? ""} ${n.sub ?? ""}`.toLowerCase())}"><div class="tree-row${n.id === node?.id ? " is-here" : ""}" role="treeitem" data-id="${esc(n.id)}" title="${esc(n.sub || n.label)}"><button type="button" class="tw${ks.length ? "" : " leaf"}" aria-label="Expand">${startOpen.has(n.id) ? "▾" : "▸"}</button>${kindGlyph(n.kind, 12)}<span class="tn">${esc(n.label)}</span><span class="tk">${esc(n.kind)}</span></div>${ks.length ? `<ul${startOpen.has(n.id) ? "" : " hidden"}>${ks.map(row).join("")}</ul>` : ""}</li>`;
+  };
+  tree.innerHTML = `<ul class="tree" role="tree">${arch.roots.map((id) => arch.nodes[id]).filter(Boolean).map(row).join("")}</ul>`;
+  const setOpen = (li, on) => {
+    const ul = li.querySelector(":scope > ul"), tw = li.querySelector(":scope > .tree-row > .tw");
+    if (!ul) return;
+    ul.hidden = !on;
+    tw.textContent = on ? "▾" : "▸";
+  };
+  const focusNode = (id) => {
+    if (byId.has(id)) {
+      select(id);
+      const it = byId.get(id);
+      const c = canvas.getBoundingClientRect();
+      animate({ k: vp.k, tx: c.width / 2 - (it.x + it.w / 2) * vp.k, ty: c.height / 2 - (it.y + it.h / 2) * vp.k }, 240);
+      return;
+    }
+    const n = arch.nodes[id];
+    if (n) location.hash = `#/map/${encodeURIComponent(n.parent ?? "")}?sel=${encodeURIComponent(id)}`;
+  };
+  tree.addEventListener("click", (ev) => {
+    const tw = ev.target.closest(".tw");
+    if (tw) return void (tw.classList.contains("leaf") || setOpen(tw.closest("li"), tw.closest("li").querySelector(":scope > ul").hidden));
+    const r = ev.target.closest(".tree-row");
+    if (r) focusNode(r.dataset.id);
+  });
+  tree.addEventListener("dblclick", (ev) => {
+    const r = ev.target.closest(".tree-row");
+    const n = r && arch.nodes[r.dataset.id];
+    if (n && drillable(n)) location.hash = `#/map/${encodeURIComponent(n.id)}`;
+  });
+  $("#m-find").addEventListener("input", (ev) => {
+    const text = ev.target.value.trim().toLowerCase();
+    const lis = [...tree.querySelectorAll("li")].reverse(); // children before parents
+    for (const li of lis) {
+      const own = !text || li.dataset.text.includes(text);
+      const sub = [...li.querySelectorAll(":scope > ul > li")].some((c) => !c.classList.contains("is-hidden"));
+      li.classList.toggle("is-hidden", !(own || sub));
+      if (text && sub) setOpen(li, true);
+    }
+  });
+  const markTree = () => {
+    for (const r of tree.querySelectorAll(".tree-row")) r.classList.toggle("is-sel", r.dataset.id === selected);
+    const r = selected && tree.querySelector(`.tree-row[data-id="${CSS.escape(selected)}"]`);
+    if (r) {
+      for (let li = r.closest("li").parentElement.closest("li"); li; li = li.parentElement.closest("li")) setOpen(li, true);
+      r.scrollIntoView({ block: "nearest" });
+    }
+  };
+  const selectBase = select;
+  select = (id) => { selectBase(id); markTree(); };
+  $("#m-flat").addEventListener("click", () => {
+    try { localStorage.setItem("crux-map-flat", flat ? "0" : "1"); } catch { /* per visit only */ }
+    location.hash = `#/map?flat=${flat ? "0" : "1"}`;
+  });
   select(q.get("sel"));
   const stopReplay = q.get("replay") && S.replay ? replayOnMap(root, stage, items, S.replay) : null;
-  return () => { removeEventListener("keydown", onKey); stopReplay?.(); };
+  return () => { unbindIde(); removeEventListener("keydown", onKey); removeEventListener("resize", onResize); cancelAnimationFrame(anim); stopReplay?.(); };
 }
+
+// settle a dropped box so the lines keep routing cleanly: the router runs lines in the gaps
+// between columns, so a box joins the column it was dropped near (centers aligned), or stands
+// clear of every column; then it snaps to a 10 px grid and moves off any box it would cover.
+function settle(it, items) {
+  const others = items.filter((n) => n !== it);
+  if (!others.length) return;
+  const cx = it.x + it.w / 2;
+  const near = others.map((n) => ({ n, d: Math.abs(n.x + n.w / 2 - cx) })).sort((a, b) => a.d - b.d)[0];
+  if (near.d < Math.max(it.w, near.n.w) * 0.6) {
+    it.x = near.n.x + (near.n.w - it.w) / 2; // into that column
+  } else {
+    // a column of its own: no box may overlap it sideways; move to the closer clear side
+    const gap = 70;
+    for (let k = 0; k < others.length; k++) {
+      const hit = others.find((n) => it.x < n.x + n.w + gap && it.x + it.w > n.x - gap && Math.abs(n.x + n.w / 2 - (it.x + it.w / 2)) > 1);
+      if (!hit) break;
+      const left = hit.x - gap - it.w, right = hit.x + hit.w + gap;
+      it.x = Math.abs(left - it.x) < Math.abs(right - it.x) ? left : right;
+    }
+  }
+  it.y = Math.round(it.y / 10) * 10;
+  // inside a column: step down (or up, if closer) until it covers no box
+  const pad = GY / 2;
+  const covers = (y) => others.find((n) => it.x < n.x + n.w && it.x + it.w > n.x && y < n.y + n.h + pad && y + it.h + pad > n.y);
+  if (covers(it.y)) {
+    let down = it.y, up = it.y;
+    for (let b; (b = covers(down)); ) down = b.y + b.h + pad;
+    for (let b; (b = covers(up)); ) up = b.y - it.h - pad;
+    it.y = Math.abs(down - it.y) <= Math.abs(up - it.y) ? down : up;
+  }
+}
+
+// The key a level's layout and viewport are kept under: "" for the top, the node id, or
+// "adrs:<id>" for a leaf's decisions.
+// Open or closed overlays, kept for the next visit.
+function mapUI() {
+  try { return JSON.parse(localStorage.getItem("crux-map-ui") ?? "{}"); } catch { return {}; }
+}
+
+const levelKey = (node, isAdrLevel, flat = false) => (isAdrLevel ? `adrs:${node.id}` : node?.id ?? (flat ? "~flat" : ""));
 
 const drillable = (n) => n && (n.children.length || n.deep.length);
 
@@ -266,18 +632,39 @@ function legend(isAdrLevel) {
   const modes = new Set((S.site.architecture.edges ?? []).map((e) => e.mode).filter(Boolean));
   const kinds = new Set(nodes.map((n) => n.kind));
   const k = (cls, text, on = true) => (on ? `<span><i class="m-key ${cls}"></i>${text}</span>` : "");
-  return `<div class="ak-legend m-legend">${k("m-key--ctx", "Context", kinds.has("context") || kinds.has("domain"))}${k("m-key--svc", "Service", kinds.has("service") || kinds.has("binary"))}${k("m-key--mod", "Module", kinds.has("module") || kinds.has("package"))}${k("m-key--ext", "External, store or topic")}${k("m-key--plan", "Planned or inferred")}${k("m-key--sync", "sync call", modes.has("sync"))}${k("m-key--async", "async event", modes.has("async"))}${k("m-key--data", "data access", modes.has("data"))}${techs.map((t) => techChip(t)).join("")}<span><b class="m-key m-key--cnt">3</b>Decisions inside</span></div>`;
+  return `<div class="ak-legend m-legend">${k("m-key--ctx", "Context", kinds.has("context") || kinds.has("domain"))}${k("m-key--svc", "Service", kinds.has("service") || kinds.has("binary"))}${k("m-key--mod", "Module", kinds.has("module") || kinds.has("package"))}${k("m-key--ext", "External, store, topic or entity")}${k("m-key--plan", "Planned or inferred")}${k("m-key--sync", "sync call", modes.has("sync"))}${k("m-key--async", "async event", modes.has("async"))}${k("m-key--data", "data access", modes.has("data"))}${techs.map((t) => techChip(t)).join("")}<span><b class="m-key m-key--cnt">3</b>Decisions inside</span></div>`;
 }
 
 // ── items ────────────────────────────────────────────────
-function nodeItems(ids) {
+// A context only groups services: with "expand contexts" the boxes are the services (and the
+// brokers, stores, … beside them) and each one is marked with the context it lives in.
+const CONTAINER = new Set(["context", "domain"]);
+const canFlatten = (arch) => Object.values(arch.nodes).some((n) => CONTAINER.has(n.kind) && n.children.length && arch.roots.includes(n.id));
+const flatPref = (q) => {
+  if (q?.has("flat")) return q.get("flat") !== "0";
+  try { return localStorage.getItem("crux-map-flat") !== "0"; } catch { return true; }
+};
+function flatten(arch, ids) {
+  return ids.flatMap((id) => {
+    const n = arch.nodes[id];
+    return n && CONTAINER.has(n.kind) && n.children.length ? flatten(arch, n.children) : n ? [id] : [];
+  });
+}
+const CTX_COLORS = ["#2f6fdb", "#c2410c", "#0f8a5f", "#8b3fd1", "#b8860b", "#d6336c", "#0e7490", "#65734b"];
+
+function nodeItems(ids, flat = false) {
   const arch = S.site.architecture;
+  const ctxIndex = new Map();
   return ids.map((id) => arch.nodes[id]).filter(Boolean).map((n) => {
     const w = n.w ?? NW;
-    const lines = n.sub ? wrapText(n.sub, Math.floor((w - 16) / CHAR_W)) : [];
+    // With many boxes on one canvas, services lose their description line (it is in the details pane).
+    const compact = flat && ids.length > 14 && !n.children.length;
+    const lines = n.sub && !compact ? wrapText(n.sub, Math.floor((w - 16) / CHAR_W)) : [];
     const labelLines = wrapText(n.label, Math.floor((w - 50) / 7.6)).slice(0, 2);
-    const h = Math.max(n.h ?? NH, 34 + labelLines.length * 17 + lines.length * 14 + (drillable(n) || n.deep.length ? 20 : 4));
-    return { id: n.id, node: n, w, h, lines, labelLines, fx: n.x, fy: n.y, at: n.at };
+    const h = compact ? Math.max(n.h ?? 0, 32 + labelLines.length * 17 + (n.deep.length ? 14 : 2)) : Math.max(n.h ?? NH, 34 + labelLines.length * 17 + lines.length * 14 + (drillable(n) || n.deep.length ? 20 : 4));
+    const ctx = flat && CONTAINER.has(arch.nodes[n.parent]?.kind) ? arch.nodes[n.parent] : null;
+    if (ctx && !ctxIndex.has(ctx.id)) ctxIndex.set(ctx.id, ctxIndex.size);
+    return { id: n.id, node: n, w, h, lines, labelLines, fx: n.x, fy: n.y, at: n.at, ctx: ctx ? { label: ctx.label, color: CTX_COLORS[ctxIndex.get(ctx.id) % CTX_COLORS.length] } : null };
   });
 }
 
@@ -384,8 +771,10 @@ function adrEdges(items) {
 function layout(items, edges) {
   if (items.length && items.every((n) => n.fx != null && n.fy != null)) {
     for (const n of items) { n.x = n.fx; n.y = n.fy; }
-    return;
+    return null;
   }
+  // Component levels are tiered; decision levels (and boxes with hand-set column hints) flow left to right.
+  if (!items.some((n) => n.adr || n.at)) return tiered(items, edges);
   const byId = new Map(items.map((n) => [n.id, n]));
   const links = edges.filter((e) => byId.has(e.from) && byId.has(e.to) && e.from !== e.to);
   const linked = new Set(links.flatMap((e) => [e.from, e.to]));
@@ -501,6 +890,163 @@ function layout(items, edges) {
   if (free.length) grid(free, Math.max(...placed.map((n) => n.y + n.h)) + GY * 1.6);
 }
 
+// ── tiered layout ────────────────────────────────────────
+// Rows, top to bottom: who calls in (clients), the services they reach, the infrastructure those
+// run on, and the outside world. A tier that grows wraps into columns. Returns the tier captions.
+const TIERS = [
+  { label: "Entry", kinds: ["actor", "app", "gateway"] },
+  { label: "Process", kinds: [] },
+  { label: "Infrastructure", kinds: ["store", "broker", "cache", "infra", "queue", "topic"] },
+  { label: "Outside", kinds: ["external"] },
+];
+const tierOf = (n) => {
+  const kind = (n.node ?? n.ghost)?.kind;
+  const i = TIERS.findIndex((t) => t.kinds.includes(kind));
+  return i < 0 ? 1 : i;
+};
+const TGX = 56, TGY = 80, TIER_GAP = 190, LANE = 8;
+
+// Rows (bands) are laid out first, then every gap between two rows grows to give each line that
+// runs through it its own lane. Returns the tier captions, the bands and the gaps for routing.
+function tiered(items, edges) {
+  // Laid out as rows, then flipped: a tier becomes a column, flow runs left to right.
+  const flip = () => { for (const n of items) [n.w, n.h] = [n.h, n.w]; };
+  flip();
+  const lay = tieredRows(items, edges);
+  flip();
+  for (const n of items) [n.x, n.y] = [n.y, n.x];
+  return lay;
+}
+
+function tieredRows(items, edges) {
+  const byId = new Map(items.map((n) => [n.id, n]));
+  const links = edges.filter((e) => byId.has(e.from) && byId.has(e.to) && e.from !== e.to);
+  const rows = TIERS.map((_, i) => items.filter((n) => tierOf(n) === i));
+
+  // Flow order inside a tier: callers before callees (back edges ignored), else the given order.
+  const flow = (xs) => {
+    const ids = new Set(xs.map((n) => n.id));
+    const out = new Map(xs.map((n) => [n.id, []]));
+    for (const e of links) if (ids.has(e.from) && ids.has(e.to) && !e.both && !e.plain) out.get(e.from).push(e.to);
+    const seen = new Set(), order = [];
+    const visit = (id) => { if (seen.has(id)) return; seen.add(id); out.get(id).forEach(visit); order.unshift(id); };
+    xs.forEach((n) => visit(n.id));
+    return order.map((id) => byId.get(id));
+  };
+
+  // 1. bands: x inside the row, and the order of rows
+  const bands = [];
+  const placed = new Set();
+  let used = 0;
+  rows.forEach((row, ti) => {
+    if (!row.length) return;
+    used++;
+    const real = flow(row.filter((n) => !n.ghost)), ghosts = row.filter((n) => n.ghost);
+    // Single-row tiers sit under the boxes they talk to; wrapped tiers keep the flow order.
+    const bary = (n) => {
+      const xs = links.filter((e) => e.from === n.id || e.to === n.id).map((e) => byId.get(e.from === n.id ? e.to : e.from)).filter((m) => placed.has(m.id) && m.x != null).map((m) => m.x + m.w / 2);
+      return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+    };
+    let first = true;
+    // each context is its own block, so it can be framed; outside neighbours come first
+    const byCtx = new Map();
+    for (const n of real) byCtx.set(n.ctx?.label ?? "", [...(byCtx.get(n.ctx?.label ?? "") ?? []), n]);
+    for (const group of [ghosts, ...byCtx.values()]) {
+      if (!group.length) continue;
+      const cols = group.length <= 5 ? group.length : Math.min(13, Math.ceil(Math.sqrt(group.length * 4.5)));
+      let seq = group;
+      if (group.length <= cols && ti > 0) {
+        const b = new Map(group.map((n) => [n.id, bary(n) ?? Infinity]));
+        if ([...b.values()].some((v) => v !== Infinity)) seq = [...group].sort((p, q) => b.get(p.id) - b.get(q.id) || group.indexOf(p) - group.indexOf(q));
+      }
+      const colW = Math.max(...seq.map((n) => n.w)) + TGX;
+      for (let r = 0; r * cols < seq.length; r++) {
+        const its = seq.slice(r * cols, (r + 1) * cols);
+        const h = Math.max(...its.map((n) => n.h));
+        const width = its.length * colW - TGX;
+        its.forEach((n, i) => { n.x = -width / 2 + i * colW + (colW - TGX - n.w) / 2; n.band = bands.length; });
+        bands.push({ items: its, h, tier: ti, tierStart: first && r === 0, grpStart: r === 0 && !first });
+      }
+      first = false;
+    }
+    row.forEach((n) => placed.add(n.id));
+  });
+
+  // 2. how many lines run through each gap (gap k lies under band k)
+  const need = bands.map(() => 0);
+  for (const e of links) {
+    const ba = byId.get(e.from).band, bb = byId.get(e.to).band;
+    const u = Math.min(ba, bb), l = Math.max(ba, bb);
+    need[u]++;
+    if (l > u + 1) need[l - 1]++;
+  }
+
+  // 3. y positions: each gap holds its lanes, plus a strip for the next tier's caption
+  const CAP = 34;
+  let y = 0;
+  const gaps = [], tiers = [];
+  bands.forEach((band, k) => {
+    band.y = y;
+    for (const n of band.items) n.y = y + (band.h - n.h) / 2;
+    y += band.h;
+    const next = bands[k + 1];
+    const base = !next ? 0 : next.tier !== band.tier ? TIER_GAP : next.grpStart ? TGY + 40 : TGY;
+    const lanes = Math.min(320, Math.max(base, need[k] ? 24 + need[k] * LANE : 0));
+    const cap = next?.tierStart ? CAP : 0;
+    gaps.push({ y1: y, y2: y + lanes, lanes: [y + 6, y + lanes - 6] });
+    y += lanes + cap;
+    if (band.tierStart) tiers.push({ label: TIERS[band.tier].label, y1: band.y });
+  });
+  return { tiers: used > 1 ? tiers : [], bands, gaps };
+}
+
+// Lines between rows: down out of the upper box into a lane of the gap, across, down into the
+// lower box. A line that skips rows drops through a clear column between them. Every line owns its lane.
+function routeTiered(ends, lay) {
+  if (!ends.length) return;
+  const reqs = lay.gaps.map(() => []);
+  const lanesUsed = new Map();
+  for (const end of ends) {
+    const { a, b } = end;
+    const pa = [end.pa[1], end.pa[0]], pb = [end.pb[1], end.pb[0]]; // the rows frame: x along a row
+    const [lo, hi] = a.band <= b.band ? [end.a, end.b] : [end.b, end.a];
+    const [plo, phi] = a.band <= b.band ? [pa, pb] : [pb, pa];
+    const u = lo.band, l = hi.band;
+    const r1 = { x1: plo[0], x2: phi[0], y: 0 };
+    reqs[u].push(r1);
+    let r2 = null, lane = null;
+    if (l > u + 1) {
+      // a clear column across the rows in between
+      const mid = lay.bands.slice(u + 1, l).flatMap((bd) => bd.items);
+      const cx = [...mid.flatMap((n) => [n.y - 14, n.y + n.h + 14]), Math.min(...mid.map((n) => n.y)) - 30, Math.max(...mid.map((n) => n.y + n.h)) + 30];
+      const clear = cx.filter((x) => !mid.some((n) => x > n.y - 8 && x < n.y + n.h + 8));
+      const x0 = clear.sort((p, q) => Math.abs(p - phi[0]) - Math.abs(q - phi[0]))[0];
+      const k = Math.round(x0);
+      const c = lanesUsed.get(k) ?? 0;
+      lanesUsed.set(k, c + 1);
+      lane = x0 + (c % 2 ? 1 : -1) * Math.ceil(c / 2) * 5;
+      r2 = { x1: lane, x2: phi[0], y: 0 };
+      reqs[l - 1].push(r2);
+    }
+    end.plan = { r1, r2, lane, plo, phi, flip: a.band > b.band };
+  }
+  // Lanes in a gap: runs that go right stack so the one starting furthest right is on top; left-going mirror that.
+  reqs.forEach((rs, k) => {
+    const g = lay.gaps[k];
+    const dirOf = (r) => Math.sign(r.x2 - r.x1);
+    rs.sort((p, q) => dirOf(p) - dirOf(q) || (dirOf(p) >= 0 ? q.x1 - p.x1 : p.x1 - q.x1));
+    const step = rs.length > 1 ? (g.lanes[1] - g.lanes[0]) / (rs.length - 1) : 0;
+    rs.forEach((r, i) => (r.y = rs.length > 1 ? g.lanes[0] + i * step : (g.y1 + g.y2) / 2));
+  });
+  for (const end of ends) {
+    const { r1, r2, lane, plo, phi, flip } = end.plan;
+    const pts = r2
+      ? [plo, [plo[0], r1.y], [lane, r1.y], [lane, r2.y], [phi[0], r2.y], phi]
+      : [plo, [plo[0], r1.y], [phi[0], r1.y], phi];
+    end.pts = dedupe((flip ? pts.reverse() : pts).map((q) => [q[1], q[0]]));
+  }
+}
+
 function grid(items, y0, perRow) {
   const cols = perRow ?? Math.max(1, Math.min(4, Math.ceil(Math.sqrt(items.length * 1.4))));
   const colW = Math.max(...items.map((m) => m.w));
@@ -518,7 +1064,7 @@ const center = (n) => [n.x + n.w / 2, n.y + n.h / 2];
 
 // Each edge leaves and enters through a box side that faces the other box. Ends on one side are
 // spread evenly along it (sorted by where the other box is).
-function assignPorts(edges, byId, boxes) {
+function assignPorts(edges, byId, boxes, tiered = false) {
   const sides = new Map();
   const ends = [];
   for (const e of edges) {
@@ -526,7 +1072,11 @@ function assignPorts(edges, byId, boxes) {
     if (!a || !b) continue;
     const [ax, ay] = center(a), [bx, by] = center(b);
     let sa, sb;
-    if (Math.abs(bx - ax) > (a.w + b.w) / 4) {
+    if (tiered && a.band != null && b.band != null) {
+      // Columns: leave the earlier tier on its right and enter the later one on its left.
+      if (a.band === b.band) sa = sb = "R";
+      else { sa = a.band < b.band ? "R" : "L"; sb = sa === "R" ? "L" : "R"; }
+    } else if (Math.abs(bx - ax) > (a.w + b.w) / 4) {
       sa = bx > ax ? "R" : "L";
       sb = sa === "R" ? "L" : "R";
     } else {
@@ -709,16 +1259,17 @@ function drawNode(stage, it) {
   const g = svgEl("g", { class: `m-node k-${n.kind}${techCls(n)}${drill ? " drill" : ""}${n.origin === "inferred" ? " is-inferred" : ""}`, tabindex: 0, role: "button", "data-id": n.id, "aria-label": `${n.label}${drill ? ", zoomable" : ""}` }, stage);
   svgEl("rect", { class: "box", x: it.x, y: it.y, width: it.w, height: it.h }, g);
   if (/^(module|package|component)$/.test(n.kind)) svgEl("rect", { class: "modbar", x: it.x, y: it.y, width: 4, height: it.h }, g);
+  if (it.ctx) svgEl("rect", { class: "ctxbar", x: it.x, y: it.y, width: 5, height: it.h, fill: it.ctx.color }, g);
   const icon = n.tech ? techPath(n.tech) : n.techs?.length ? techPath(n.techs[0]) : null;
   if (icon) {
     const sv = svgEl("svg", { x: it.x + 7, y: it.y + 5, width: 11, height: 11, viewBox: "0 0 24 24" }, g);
     svgEl("path", { class: "ticon", d: icon }, sv);
   }
-  svgEl("text", { class: "tag", x: it.x + (icon ? 22 : 8), y: it.y + 14 }, g).textContent = tagText(n);
+  svgEl("text", { class: "tag", x: it.x + (icon ? 22 : 8), y: it.y + 14 }, g).textContent = tagText(n) + (it.ctx ? ` · ${it.ctx.label.replace(/\s*context$/i, "").toUpperCase()}` : "");
   const oq = n.doc ? openQuestionsFor(n.doc).length : 0;
   if (oq) {
     const b = svgEl("g", { class: "qbadge" }, g);
-    svgEl("circle", { cx: it.x + it.w - (n.deep.length ? 30 : 9), cy: it.y + 9, r: 7 }, b);
+    svgEl("rect", { x: it.x + it.w - (n.deep.length ? 30 : 9) - 7, y: it.y + 2, width: 14, height: 14 }, b);
     svgEl("text", { x: it.x + it.w - (n.deep.length ? 30 : 9), y: it.y + 12.5, "text-anchor": "middle" }, b).textContent = "?";
   }
   it.labelLines.forEach((l, i) => (svgEl("text", { class: "label", x: it.x + 8, y: it.y + 32 + i * 17 }, g).textContent = l));

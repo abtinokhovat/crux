@@ -153,11 +153,11 @@ note A, B: text
         const xo = s.over.map((p) => xs[idx.get(p)]);
         const lo = Math.min(...xo), hi = Math.max(...xo);
         const w = Math.max(s.w, hi - lo + 40), h = s.lines.length * LH + 12, cx = (lo + hi) / 2;
-        body.push(`<g class="ak-sq-step" data-step="${k++}" data-kind="note" data-label="${esc(s.text)}"><rect class="am-note" x="${f(cx - w / 2)}" y="${f(y)}" width="${f(w)}" height="${f(h)}" rx="2"/>${textLines(s.lines, cx, y + h / 2, ' font-size="12"')}</g>`);
+        body.push(`<g class="ak-sq-step" data-step="${k++}" data-kind="note" data-label="${esc(s.text)}"><rect class="am-note" x="${f(cx - w / 2)}" y="${f(y)}" width="${f(w)}" height="${f(h)}"/>${textLines(s.lines, cx, y + h / 2, ' font-size="12"')}</g>`);
         y += h + 16;
       } else {
         const w = Math.max(...s.lines.map((l) => measure(l, 12))) + 20;
-        body.push(`<g class="ak-sq-step" data-step="${k++}" data-kind="divider" data-label="${esc(s.text)}"><line class="am-lifeline" x1="${MARGIN}" y1="${f(y + 10)}" x2="${f(width - MARGIN)}" y2="${f(y + 10)}"/><rect class="am-actor" x="${f(width / 2 - w / 2)}" y="${f(y)}" width="${f(w)}" height="20" rx="2"/>${textLines(s.lines.slice(0, 1), width / 2, y + 10, ' font-size="12"')}</g>`);
+        body.push(`<g class="ak-sq-step" data-step="${k++}" data-kind="divider" data-label="${esc(s.text)}"><line class="am-lifeline" x1="${MARGIN}" y1="${f(y + 10)}" x2="${f(width - MARGIN)}" y2="${f(y + 10)}"/><rect class="am-actor" x="${f(width / 2 - w / 2)}" y="${f(y)}" width="${f(w)}" height="20"/>${textLines(s.lines.slice(0, 1), width / 2, y + 10, ' font-size="12"')}</g>`);
         y += 34;
       }
     }
@@ -167,7 +167,7 @@ note A, B: text
       const node = res.get(p).node;
       const tech = node?.tech ? ` tech tech-${String(node.tech).replace(/[^a-z0-9-]/g, "")}` : "";
       const cls = node ? ` ak-part--linked k-${esc(node.kind)}${tech}` : "";
-      const box = `<rect class="am-actor" x="${f(x - actorW[i] / 2)}" y="${TOP}" width="${f(actorW[i])}" height="${ACTOR_H}" rx="2"/>${textLines([p], x, TOP + ACTOR_H / 2)}`;
+      const box = `<rect class="am-actor" x="${f(x - actorW[i] / 2)}" y="${TOP}" width="${f(actorW[i])}" height="${ACTOR_H}"/>${textLines([p], x, TOP + ACTOR_H / 2)}`;
       const href = node ? (node.children?.length ? `#/map/${encodeURIComponent(node.id)}` : `#/map/${encodeURIComponent(node.parent ?? "")}?sel=${encodeURIComponent(node.id)}`) : "";
       const inner = href ? `<a href="${href}">${box}</a>` : box;
       return `<g class="ak-part${cls}" data-p="${esc(p)}"${node ? ` data-node="${esc(node.id)}"` : ""}><line class="am-lifeline" x1="${f(x)}" y1="${TOP + ACTOR_H}" x2="${f(x)}" y2="${f(height - 4)}"/>${inner}</g>`;

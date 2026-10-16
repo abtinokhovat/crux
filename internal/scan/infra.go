@@ -91,6 +91,13 @@ func composeFile(cfg *config.Config, cat *catalog.Catalog, p string, f *Facts) {
 	if yaml.Unmarshal(b, &doc) != nil {
 		return
 	}
+	dirs := map[string]string{}
+	defer func() {
+		var root yaml.Node
+		if yaml.Unmarshal(b, &root) == nil && len(root.Content) > 0 {
+			composeWiring(p, root.Content[0], dirs, f)
+		}
+	}()
 	for name, s := range doc.Services {
 		if s.Build != nil {
 			ctx, dockerfile := "", ""
@@ -105,6 +112,7 @@ func composeFile(cfg *config.Config, cat *catalog.Catalog, p string, f *Facts) {
 			if dockerfile != "" && path.Dir(dockerfile) != "." {
 				d = path.Clean(path.Join(d, path.Dir(dockerfile)))
 			}
+			dirs[name] = d
 			f.Services = append(f.Services, Candidate{Name: name, Dir: d, Kind: "service", Evidence: []string{p + " services." + name}})
 			continue
 		}
@@ -125,6 +133,31 @@ func k8sFile(cfg *config.Config, cat *catalog.Catalog, p string, f *Facts) {
 	b, err := os.ReadFile(cfg.Abs(p))
 	if err != nil || !strings.Contains(string(b), "kind:") || !strings.Contains(string(b), "apiVersion:") {
 		return
+	}
+	// wiring: env, labels, Service selectors, Ingress rules
+	labels := map[string]map[string]string{}
+	ndec := yaml.NewDecoder(strings.NewReader(string(b)))
+	for {
+		var n yaml.Node
+		if err := ndec.Decode(&n); err != nil {
+			break
+		}
+		if len(n.Content) == 0 {
+			continue
+		}
+		doc := n.Content[0]
+		kind, name := "", ""
+		if k := mapGet(doc, "kind"); k != nil {
+			kind = k.Value
+		}
+		if m := mapGet(mapGet(doc, "metadata"), "name"); m != nil {
+			name = m.Value
+		}
+		if _, ok := k8sKinds[kind]; (ok || kind == "Service" || kind == "Ingress") && name != "" {
+			if l := k8sWiring(p, kind, name, doc, f); len(l) > 0 {
+				labels[name] = l
+			}
+		}
 	}
 	dec := yaml.NewDecoder(strings.NewReader(string(b)))
 	for {
@@ -160,13 +193,13 @@ func k8sFile(cfg *config.Config, cat *catalog.Catalog, p string, f *Facts) {
 		isInfra := false
 		for _, img := range images {
 			if ids := cat.DetectImage(img); len(ids) > 0 {
-				f.Infra = append(f.Infra, Infra{Name: name, Image: img, Tech: ids[0], Kind: kindOfTech(cat, ids[0]), File: p})
+				f.Infra = append(f.Infra, Infra{Name: name, Image: img, Tech: ids[0], Kind: kindOfTech(cat, ids[0]), File: p, Labels: labels[name]})
 				f.Tech = append(f.Tech, TechHit{ID: ids[0], Via: img, Dir: path.Dir(p), Evidence: p})
 				isInfra = true
 			}
 		}
 		if !isInfra {
-			f.Services = append(f.Services, Candidate{Name: name, Dir: path.Dir(p), Kind: ck, Evidence: []string{p + " " + kind + "/" + name}})
+			f.Services = append(f.Services, Candidate{Name: name, Dir: path.Dir(p), Kind: ck, Evidence: []string{p + " " + kind + "/" + name}, Labels: labels[name]})
 		}
 	}
 }

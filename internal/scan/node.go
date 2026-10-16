@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/abtinokhovat/crux/internal/catalog"
+	"github.com/abtinokhovat/crux/internal/code"
 	"github.com/abtinokhovat/crux/internal/config"
 )
 
@@ -25,7 +26,7 @@ type pkgJSON struct {
 
 var (
 	tsImportRe  = regexp.MustCompile(`(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|^\s*import\s+)['"]([^'"]+)['"]`)
-	tsRouteRe   = regexp.MustCompile(`\b(?:app|router|server|api|r|routes|fastify|instance|hono)\.(get|post|put|patch|delete|head|options|all)\(\s*['"\x60]([^'"\x60]+)['"\x60]`)
+	tsRouteRe   = regexp.MustCompile(`\b(?:app|router|server|api|r|routes|fastify|instance|hono)\.(get|post|put|patch|delete|head|options|all)\(\s*['"\x60]([^'"\x60]+)['"\x60](?:\s*,\s*([A-Za-z_$][\w$.]*)\s*[,)])?`)
 	tsRouteObj  = regexp.MustCompile(`\.route\(\s*\{[^}]*method:\s*['"](\w+)['"][^}]*url:\s*['"]([^'"]+)['"]`)
 	tsNestCtl   = regexp.MustCompile(`@Controller\(\s*['"]?([^'")]*)['"]?\s*\)`)
 	tsNestRoute = regexp.MustCompile(`@(Get|Post|Put|Patch|Delete|Head|Options|All)\(\s*['"]?([^'")]*)['"]?\s*\)`)
@@ -35,6 +36,9 @@ var (
 		dir  string
 		kind string
 	}{
+		// kafkajs: consumer.subscribe({ topic(s) }) reads, producer.send({ topic }) writes
+		{regexp.MustCompile(`\.subscribe\(\s*\{\s*topics?\s*:\s*\[?\s*['"]([^'"]+)['"]`), "sub", "topic"},
+		{regexp.MustCompile(`\.send(?:Batch)?\(\s*\{\s*topic\s*:\s*['"]([^'"]+)['"]`), "pub", "topic"},
 		{regexp.MustCompile(`\btopics?\s*:\s*\[?\s*['"]([^'"]+)['"]`), "", "topic"},
 		{regexp.MustCompile(`\.(?:publish|produce|emit|sendMessage)\(\s*['"]([^'"]+)['"]`), "pub", "topic"},
 		{regexp.MustCompile(`\.(?:subscribe|consume|on)\(\s*['"]([a-z][\w.:-]*[.:][\w.:-]+)['"]`), "sub", "topic"},
@@ -50,9 +54,10 @@ var (
 
 func tsAdapter(cfg *config.Config, cat *catalog.Catalog, files []string, f *Facts, extra patterns) {
 	type tsPkg struct {
-		mod  *Module
-		pj   pkgJSON
-		deps map[string]bool
+		mod   *Module
+		pj    pkgJSON
+		deps  map[string]bool
+		files []string
 	}
 	pkgs := map[string]*tsPkg{}
 	names := map[string]string{} // npm name → dir
@@ -110,7 +115,26 @@ func tsAdapter(cfg *config.Config, cat *catalog.Catalog, files []string, f *Fact
 			continue
 		}
 		pk.mod.Files++
+		pk.files = append(pk.files, p)
 		scanTSSource(cfg.Abs(p), p, pk.mod, names, f, extra)
+	}
+	for _, d := range dirs {
+		var rs []int
+		for i := range f.Routes {
+			if f.Routes[i].Dir == d && f.Routes[i].Handler != "" {
+				rs = append(rs, i)
+			}
+		}
+		if len(rs) > 0 {
+			sub := make([]Route, len(rs))
+			for j, i := range rs {
+				sub[j] = f.Routes[i]
+			}
+			tsAnchors(cfg, pkgs[d].files, sub)
+			for j, i := range rs {
+				f.Routes[i] = sub[j]
+			}
+		}
 	}
 	for _, d := range dirs {
 		pk := pkgs[d]
@@ -217,7 +241,7 @@ func scanTSSource(abs, rel string, mod *Module, names map[string]string, f *Fact
 				method = ""
 			}
 			if strings.HasPrefix(m[2], "/") {
-				f.Routes = append(f.Routes, Route{Kind: "http", Method: method, Path: m[2], Dir: dir, File: rel, Line: n})
+				f.Routes = append(f.Routes, Route{Kind: "http", Method: method, Path: m[2], Dir: dir, File: rel, Line: n, Handler: m[3]})
 			}
 		}
 		for _, m := range tsRouteObj.FindAllStringSubmatch(line, -1) {
@@ -239,7 +263,7 @@ func scanTSSource(abs, rel string, mod *Module, names map[string]string, f *Fact
 		}
 		for _, tp := range tsTopicRes {
 			for _, m := range tp.re.FindAllStringSubmatch(line, -1) {
-				d := tp.dir
+				d, guess := tp.dir, false
 				if d == "" {
 					low := strings.ToLower(line)
 					switch {
@@ -248,9 +272,10 @@ func scanTSSource(abs, rel string, mod *Module, names map[string]string, f *Fact
 					case strings.Contains(low, "consum") || strings.Contains(low, "subscri") || strings.Contains(low, "receive"):
 						d = "sub"
 					}
+					guess = d != ""
 				}
 				if !strings.Contains(m[1], " ") {
-					f.Topics = append(f.Topics, Topic{Name: m[1], Kind: tp.kind, Dir: d, Mod: dir, File: rel, Line: n})
+					f.Topics = append(f.Topics, Topic{Name: m[1], Kind: tp.kind, Dir: d, Mod: dir, File: rel, Line: n, Guess: guess})
 				}
 			}
 		}
@@ -258,6 +283,38 @@ func scanTSSource(abs, rel string, mod *Module, names map[string]string, f *Fact
 			if m := re.FindStringSubmatch(line); len(m) > 1 && m[1] != "" {
 				f.Topics = append(f.Topics, Topic{Name: m[1], Kind: "topic", Mod: dir, File: rel, Line: n})
 			}
+		}
+		for _, x := range extra.directed(line) {
+			f.Topics = append(f.Topics, Topic{Name: x[0], Kind: "topic", Dir: x[1], Mod: dir, File: rel, Line: n})
+		}
+		wireLine(line, dir, rel, n, tsEnvRe, tsClientRe, nil, f)
+	}
+}
+
+// tsAnchors anchors routes whose handler is a named function or method declared in the package.
+func tsAnchors(cfg *config.Config, files []string, routes []Route) {
+	syms := map[string]map[string]code.Span{}
+	for _, p := range files {
+		if s, err := code.FileSymbols(cfg.Abs(p)); err == nil {
+			syms[p] = s
+		}
+	}
+	for i := range routes {
+		r := &routes[i]
+		if r.Handler == "" {
+			continue
+		}
+		name := r.Handler[strings.LastIndex(r.Handler, ".")+1:]
+		var hits []string
+		for _, p := range files {
+			for k := range syms[p] {
+				if (!strings.Contains(r.Handler, ".") && k == name) || (strings.Contains(r.Handler, ".") && strings.HasSuffix(k, "."+name)) {
+					hits = append(hits, p+"#"+k)
+				}
+			}
+		}
+		if len(hits) == 1 {
+			r.At = hits[0]
 		}
 	}
 }

@@ -1,0 +1,22 @@
+# Message brokers. name = argument number of the topic/exchange/queue name.
+rules:
+  - {id: amqp-publish,     match: "github.com/rabbitmq/amqp091-go.Channel.Publish",            role: publish, kind: topic, tech: rabbitmq, name: 0, key: 1}
+  - {id: amqp-publish-ctx, match: "github.com/rabbitmq/amqp091-go.Channel.PublishWithContext", role: publish, kind: topic, tech: rabbitmq, name: 1, key: 2}
+  - {id: amqp-consume,     match: "github.com/rabbitmq/amqp091-go.Channel.Consume",            role: consume, kind: queue, tech: rabbitmq, name: 0}
+  - {id: amqp-queue,       match: "github.com/rabbitmq/amqp091-go.Channel.QueueDeclare",       role: declare, kind: queue, tech: rabbitmq, name: 0}
+  - {id: amqp-exchange,    match: "github.com/rabbitmq/amqp091-go.Channel.ExchangeDeclare",    role: declare, kind: topic, tech: rabbitmq, name: 0}
+  - {id: amqp-dial,        match: "github.com/rabbitmq/amqp091-go.Dial*",                      role: use, tech: rabbitmq}
+  - {id: streadway-publish, match: "github.com/streadway/amqp.Channel.Publish",               role: publish, kind: topic, tech: rabbitmq, name: 0, key: 1}
+  - {id: streadway-consume, match: "github.com/streadway/amqp.Channel.Consume",               role: consume, kind: queue, tech: rabbitmq, name: 0}
+
+  - {id: sarama-msg,       match: "github.com/IBM/sarama.ProducerMessage{}",   role: publish, kind: topic, tech: kafka, field: Topic}
+  - {id: sarama-msg-old,   match: "github.com/Shopify/sarama.ProducerMessage{}", role: publish, kind: topic, tech: kafka, field: Topic}
+  - {id: sarama-group,     match: "github.com/IBM/sarama.ConsumerGroup.Consume", role: consume, kind: topic, tech: kafka, name: 1}
+  - {id: sarama-partition, match: "github.com/IBM/sarama.Consumer.ConsumePartition", role: consume, kind: topic, tech: kafka, name: 0}
+  - {id: sarama-use,       match: "github.com/IBM/sarama.New*", role: use, tech: kafka}
+  - {id: kafkago-msg,      match: "github.com/segmentio/kafka-go.Message{}",    role: publish, kind: topic, tech: kafka, field: Topic}
+  - {id: kafkago-writer,   match: "github.com/segmentio/kafka-go.Writer{}",     role: publish, kind: topic, tech: kafka, field: Topic}
+  - {id: kafkago-reader,   match: "github.com/segmentio/kafka-go.ReaderConfig{}", role: consume, kind: topic, tech: kafka, field: Topic}
+  - {id: nats-publish,     match: "github.com/nats-io/nats.go.Conn.Publish",    role: publish, kind: topic, tech: nats, name: 0}
+  - {id: nats-subscribe,   match: "github.com/nats-io/nats.go.Conn.*Subscribe*", role: consume, kind: topic, tech: nats, name: 0}
+  - {id: asynq-task,       match: "github.com/hibiken/asynq.NewTask",           role: publish, kind: queue, tech: redis, name: 0}

@@ -1,9 +1,11 @@
 // The system side of crux: elements (services, stores, contracts, entities, flows, questions,
 // sessions, conventions), styled from the catalog. Views: system index, element page, flows,
 // questions, sessions; plus chips, icons and the local connection diagram other views reuse.
+import { trackFromSteps } from "./track.js";
 import { $, S, ancestors, childrenOf, elAncestors, esc, gist, href, isElement, label, linksIn, linksOut, pill, refChip, statusLabel, tagChip } from "./util.js";
 import { panel, sheet, titleBlock } from "./blueprint.js";
 import { ICONS } from "./vendor/icons.js";
+import { entityRelations, homeHtml } from "./model.js";
 
 // ── catalog: colors, icons, kinds ─────────────────────────
 export const techOf = (id) => S.site.catalog?.tech?.[id] ?? { id, label: id, color: "", category: "" };
@@ -28,7 +30,7 @@ export function techIcon(id, size = 14) {
   const path = t.icon && ICONS[t.icon];
   if (path) return `<svg class="ak-ticon" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
   const letters = String(t.label || id).replace(/[^A-Za-z0-9]/g, "").slice(0, 2) || "?";
-  return `<svg class="ak-ticon ak-ticon--mono" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="1" width="22" height="22" rx="3"/><text x="12" y="16.5" text-anchor="middle">${esc(letters)}</text></svg>`;
+  return `<svg class="ak-ticon ak-ticon--mono" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="1" width="22" height="22"/><text x="12" y="16.5" text-anchor="middle">${esc(letters)}</text></svg>`;
 }
 export const techPath = (id) => ICONS[techOf(id).icon] ?? null;
 
@@ -41,22 +43,22 @@ export const techChip = (id) => {
 const GLYPH = {
   system: '<rect x="1.5" y="1.5" width="13" height="13"/><rect x="4" y="4" width="8" height="8"/>',
   context: '<rect x="1.5" y="2.5" width="13" height="11" stroke-dasharray="2 1.5"/><path d="M4 6h8M4 9h5"/>',
-  service: '<rect x="2" y="3" width="12" height="10"/><path d="M2 6h12"/><circle cx="4" cy="4.5" r=".6"/>',
-  app: '<rect x="4" y="1.5" width="8" height="13" rx="1.5"/><path d="M7 12.5h2"/>',
+  service: '<rect x="2" y="3" width="12" height="10"/><path d="M2 6h12"/><rect x="3.5" y="4" width="1" height="1"/>',
+  app: '<rect x="4" y="1.5" width="8" height="13"/><path d="M7 12.5h2"/>',
   module: '<rect x="2" y="3" width="12" height="10"/><path d="M5 3v10"/>',
   library: '<path d="M3 2.5v11M6 2.5v11M9.5 3l3 10.5"/>',
-  job: '<circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/>',
-  actor: '<circle cx="8" cy="4.5" r="2.5"/><path d="M3 14c0-3 2.2-5 5-5s5 2 5 5"/>',
+  job: '<rect x="2" y="2" width="12" height="12"/><path d="M8 4.5V8h3"/>',
+  actor: '<rect x="5.5" y="2" width="5" height="5"/><path d="M3 14l1.5-5h7L13 14z"/>',
   external: '<rect x="2" y="3" width="12" height="10" stroke-dasharray="2.2 1.6"/><path d="M6 10l4-4M7 6h3v3"/>',
-  store: '<ellipse cx="8" cy="3.5" rx="5.5" ry="2"/><path d="M2.5 3.5v9c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2v-9M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2"/>',
-  cache: '<ellipse cx="8" cy="3.5" rx="5.5" ry="2"/><path d="M2.5 3.5v9c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2v-9"/><path d="M8.5 6L6.5 9h3l-2 3"/>',
-  broker: '<rect x="1.5" y="5" width="13" height="6" rx="3"/><path d="M5 8h6M9 6.5L11 8 9 9.5"/>',
-  gateway: '<path d="M8 1.5l5.5 2.5v4c0 3.5-2.5 5.5-5.5 6.5-3-1-5.5-3-5.5-6.5V4z"/>',
-  infra: '<rect x="2" y="2.5" width="12" height="4"/><rect x="2" y="9.5" width="12" height="4"/><circle cx="4.5" cy="4.5" r=".6"/><circle cx="4.5" cy="11.5" r=".6"/>',
-  contract: '<path d="M2 8h4M10 8h4"/><rect x="6" y="5" width="4" height="6" rx="1"/>',
+  store: '<rect x="2.5" y="2" width="11" height="12"/><path d="M2.5 5h11M2.5 8.5h11"/>',
+  cache: '<rect x="2.5" y="2" width="11" height="12"/><path d="M2.5 5h11"/><path d="M8.5 6.5L6.5 9.5h3l-2 3"/>',
+  broker: '<rect x="1.5" y="5" width="13" height="6"/><path d="M5 8h6M9 6.5L11 8 9 9.5"/>',
+  gateway: '<path d="M8 1.5l5.5 2.5v5L8 14.5 2.5 9V4z"/>',
+  infra: '<rect x="2" y="2.5" width="12" height="4"/><rect x="2" y="9.5" width="12" height="4"/><rect x="4" y="4" width="1" height="1"/><rect x="4" y="11" width="1" height="1"/>',
+  contract: '<path d="M2 8h4M10 8h4"/><rect x="6" y="5" width="4" height="6"/>',
   entity: '<rect x="2" y="2.5" width="12" height="11"/><path d="M2 6h12M2 9.5h12M6 6v7.5"/>',
-  flow: '<circle cx="3" cy="8" r="1.6"/><circle cx="13" cy="4" r="1.6"/><circle cx="13" cy="12" r="1.6"/><path d="M4.5 7.3L11.4 4.6M4.5 8.7l6.9 2.7"/>',
-  question: '<circle cx="8" cy="8" r="6.5"/><path d="M6 6.3a2 2 0 1 1 2.8 1.8c-.5.3-.8.6-.8 1.3v.3"/><circle cx="8" cy="11.6" r=".5"/>',
+  flow: '<rect x="1.5" y="6.5" width="3" height="3"/><rect x="11.5" y="2.5" width="3" height="3"/><rect x="11.5" y="10.5" width="3" height="3"/><path d="M4.5 8H8V4h3.5M8 8v4h3.5"/>',
+  question: '<rect x="1.5" y="1.5" width="13" height="13"/><path d="M5.5 5V3.8h5V7.5H8v2"/><rect x="7.5" y="11" width="1" height="1"/>',
   session: '<rect x="2" y="3" width="12" height="11"/><path d="M2 6.5h12M5 1.5v3M11 1.5v3"/>',
   convention: '<path d="M3 2.5h10v11H3zM5.5 6h5M5.5 8.5h5M5.5 11h3"/>',
   adr: '<path d="M3 2.5h7l3 3v8H3z"/><path d="M5.5 9l1.8 1.8 3.4-3.6"/>',
@@ -167,6 +169,7 @@ export function gaps(e) {
     if (!e.steps?.length) out.push({ k: "warn", t: "No steps block" });
   }
   if (e.kind === "entity" && !e.parent) out.push({ k: "info", t: "No owner (owns: on a service, or in:)" });
+  if (e.kind === "entity" && e.parent && !e.store) out.push({ k: "info", t: "No store found (stored_in:)" });
   const oq = openQuestionsFor(e.id).length;
   if (oq) out.push({ k: "warn", t: `${oq} open question${oq > 1 ? "s" : ""}` });
   const seenMsg = new Set(out.map((x) => x.t));
@@ -226,7 +229,7 @@ export function egoMap(e) {
   const edge = (x1, y1, x2, y2, it, dir) => {
     const mode = it.modes.has("async") ? "async" : it.modes.has("stream") ? "stream" : it.modes.has("data") ? "data" : it.types.has("depends_on") ? "dep" : "sync";
     const mx = (x1 + x2) / 2;
-    const d = `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+    const d = `M${x1},${y1} H${mx} V${y2} H${x2}`;
     const text = it.labels.join(", ");
     const ly = dir === "in" ? y1 : y2;
     const lx = dir === "in" ? x1 + 10 : x2 - 10;
@@ -243,6 +246,32 @@ export function egoMap(e) {
   return `<figure class="ak-ego-map"><svg viewBox="-4 -4 ${W + 8} ${H + 8}" role="img" aria-label="Connections of ${esc(elName(e))}">${heads}${parts.join("")}</svg>${legend}</figure>`;
 }
 const clip = (s, n) => (String(s).length > n ? String(s).slice(0, Math.max(1, n - 1)) + "…" : String(s));
+
+// ── tracks ────────────────────────────────────────────────
+// What a ```track scene needs from crux: stations as elements, hops as chips, transports by mode.
+const TRANSPORT_ALIAS = () => {
+  const out = new Map();
+  for (const [id, t] of Object.entries(S.site.catalog?.transports ?? {})) { out.set(id, id); for (const a of t.aliases ?? []) out.set(a, id); }
+  return out;
+};
+export function trackResolver() {
+  const alias = TRANSPORT_ALIAS();
+  return {
+    el(id) {
+      const e = S.byId.get(id);
+      if (!e) return null;
+      const t = mainTech(e);
+      return { id: e.id, title: elName(e), kind: e.kind, tag: t ? `${kindName(e.kind)} · ${techOf(t).label}` : kindName(e.kind), techClass: t ? `tech tech-${cls(t)}` : "", icon: t ? techPath(t) : null, href: href(e), inferred: e.origin === "inferred" };
+    },
+    chip: (id) => (S.byId.get(id) ? elChip(S.byId.get(id)) : null),
+    transport(word) {
+      const id = alias.get(String(word ?? "").toLowerCase());
+      if (!id) return null;
+      const mode = modeOfTransport(id);
+      return { id, mode, html: transportChip(id, mode) };
+    },
+  };
+}
 
 // ── flows ─────────────────────────────────────────────────
 // Steps as a route: numbered stops grouped by phase, each with its hop, contract and branches.
@@ -416,6 +445,7 @@ export async function elementPage(view, id, q, loadDoc) {
     { label: "Status", value: e.status ?? "" },
     { label: "Date", value: e.date ?? "" },
     { label: "Tech", value: e.tech?.length ? "x" : "", html: `<span class="ak-chips">${(e.tech ?? []).map(techChip).join("")}</span>`, span: 2 },
+    { label: e.storeInferred ? "Lives in (store calculated)" : "Lives in", value: e.kind === "entity" ? "x" : "", html: e.kind === "entity" ? homeHtml(e) : "", span: 2 },
     { label: e.codeImplied ? "Code (this folder)" : "Code", value: e.code?.length ? "x" : "", html: (e.code ?? []).map((c) => `<span class="mono" style="font-size:12px">${esc(c)}</span>`).join(" · "), span: 2 },
     { label: "Trigger", value: e.trigger ?? "" },
     { label: "Outcome", value: e.outcome ?? "" },
@@ -429,9 +459,16 @@ export async function elementPage(view, id, q, loadDoc) {
   let n = 0;
   const L = () => String.fromCharCode(65 + n++);
   if (e.kind === "flow") {
+    // every flow plays: a scene made from its steps, unless the file draws its own ```track
+    if (e.steps?.length && !/```\s*track\b/.test(doc?.source ?? "")) {
+      const src = trackFromSteps(e, S.byId).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/\n/g, "&#10;");
+      panels.push(panel(L(), "Play", `<figure class="ak-track" data-track data-src="${src}"></figure>`, { span: 3, meta: "made from the steps" }));
+    }
     panels.push(panel(L(), "Route", routeHtml(e, q.get("step")), { span: 3, meta: `${e.steps?.length ?? 0} steps` }));
   } else if (e.kind === "contract") {
     panels.push(panel(L(), "Who is on each side", contractHtml(e), { span: 3 }));
+  } else if (e.kind === "entity") {
+    panels.push(panel(L(), "Relations", entityRelations(e), { span: 3, meta: `<a href="#/model">domain model ›</a>` }));
   } else if (!["question", "session", "convention"].includes(e.kind) && !(e.kind === "entity" && !linksOut(e.id).length && !linksIn(e.id, "reads", "writes").length)) {
     panels.push(panel(L(), "Connections", egoMap(e), { span: 3, meta: mapLink ? `<a href="${mapLink}">on the map ›</a>` : "" }));
   }
@@ -528,22 +565,55 @@ ${e.tech?.length > 1 ? `<div class="ak-ecard-tech">${e.tech.slice(1).map((x) => 
 <div class="ak-ecard-foot">${inn ? `<span title="incoming">← ${inn}</span>` : ""}${out ? `<span title="outgoing">${out} →</span>` : ""}${fl ? `<span title="flows">⟿ ${fl}</span>` : ""}${dq ? `<span class="ok" title="decisions">✓ ${dq}</span>` : ""}${oq ? `<span class="warn" title="open questions">? ${oq}</span>` : ""}${g ? `<span class="err" title="warnings">! ${g}</span>` : ""}</div></a>`;
 }
 
+// A compact row for the system index: one line per element, so a big system stays on a few screens.
+function elRow(e) {
+  const t = mainTech(e);
+  const out = linksOut(e.id).filter((l) => ["calls", "publishes", "writes", "reads", "uses", "consumes"].includes(l.type) && !l.implied).length;
+  const inn = linksIn(e.id).filter((l) => ["calls", "reads", "writes", "uses", "consumes"].includes(l.type)).length;
+  const fl = flowsThrough(e.id).length, dq = decisionsFor(e.id).length, oq = openQuestionsFor(e.id).length;
+  const g = gaps(e).filter((x) => x.k !== "info").length;
+  const where = elAncestors(e.id).map((x) => x.title).join(" / ");
+  return `<a class="ak-erow k-${esc(e.kind)}${t ? ` tech tech-${cls(t)}` : ""}${e.origin === "inferred" ? " is-inferred" : ""}" href="${href(e)}" data-el="${esc(e.id)}">
+<span class="ak-erow-n">${t && e.kind !== "contract" ? techIcon(t, 15) : kindGlyph(e.kind, 14)}<b>${esc(elName(e))}</b></span>
+<span class="ak-erow-s">${e.subtitle ? esc(e.subtitle) : `<i>${esc(where)}</i>`}</span>
+<span class="ak-erow-w">${where && e.subtitle ? esc(where) : ""}</span>
+<span class="ak-erow-t">${(e.tech ?? []).slice(0, 4).map((x) => `<span class="tech tech-${cls(x)}" title="${esc(techOf(x).label)}">${techIcon(x, 13)}</span>`).join("")}</span>
+<span class="ak-erow-f">${inn ? `<span title="incoming">← ${inn}</span>` : ""}${out ? `<span title="outgoing">${out} →</span>` : ""}${fl ? `<span title="flows">⟿ ${fl}</span>` : ""}${dq ? `<span class="ok" title="decisions">✓ ${dq}</span>` : ""}${oq ? `<span class="warn" title="open questions">? ${oq}</span>` : ""}${g ? `<span class="err" title="warnings">! ${g}</span>` : ""}</span></a>`;
+}
+
+const LIMIT = 14;
+// Rows past the limit are hidden until "Show all" is pressed (one listener for every system page).
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-more]");
+  if (!b) return;
+  const sec = b.closest(".ak-sys-sec");
+  for (const el of sec.querySelectorAll("[data-extra]")) el.removeAttribute("hidden");
+  b.remove();
+});
+const more = (n) => (n > LIMIT ? `<button class="ak-btn ak-btn--ghost ak-more" type="button" data-more>Show ${n - LIMIT} more</button>` : "");
+
 export function systemPage(parts, q) {
   const text = (q.get("q") ?? "").toLowerCase();
   const kind = q.get("kind") ?? "";
+  const cards = q.get("view") === "cards";
   const els = elements().filter((e) => !["flow", "question", "session"].includes(e.kind));
   const match = (e) => (!kind || e.kind === kind) && (!text || `${e.id} ${e.title} ${e.name ?? ""} ${e.subtitle ?? ""} ${(e.tech ?? []).join(" ")} ${(e.tags ?? []).join(" ")}`.toLowerCase().includes(text));
   const shown = els.filter(match);
   const counts = new Map();
   for (const e of els) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
-  const link = (patch) => { const p = new URLSearchParams({ q: q.get("q") ?? "", kind, ...patch }); for (const [k, v] of [...p]) if (!v) p.delete(k); return `#/system${p.toString() ? `?${p}` : ""}`; };
+  const link = (patch) => { const p = new URLSearchParams({ q: q.get("q") ?? "", kind, view: cards ? "cards" : "", ...patch }); for (const [k, v] of [...p]) if (!v) p.delete(k); return `#/system${p.toString() ? `?${p}` : ""}`; };
   const chips = [`<a class="ak-chip${!kind ? " on" : ""}" href="${link({ kind: "" })}">All <b>${els.length}</b></a>`].concat([...counts].sort((a, b) => b[1] - a[1]).map(([k, c]) => `<a class="ak-chip${kind === k ? " on" : ""}" href="${link({ kind: kind === k ? "" : k })}">${kindGlyph(k, 12)} ${esc(kindName(k))} <b>${c}</b></a>`)).join("");
   if (!elements().length) return `<div class="ak-page-head"><div><h1>System</h1><p>No crux files yet.</p></div></div>${emptySystem()}`;
+  const filtered = !!(text || kind);
+  const COLLAPSED = new Set(["contract", "entity", "convention"]);
   const sections = GROUPS.map(([title, kinds]) => {
     const xs = shown.filter((e) => kinds.includes(e.kind));
     if (!xs.length) return "";
-    if (kinds[0] === "contract") return `<section class="ak-sys-sec"><h2>${esc(title)} <b>${xs.length}</b></h2>${contractTable(xs)}</section>`;
-    return `<section class="ak-sys-sec"><h2>${esc(title)} <b>${xs.length}</b></h2><div class="ak-deck ak-edeck">${xs.map(elCard).join("")}</div></section>`;
+    const open = filtered || !COLLAPSED.has(kinds[0]);
+    const head = `<summary><h2>${esc(title)} <b>${xs.length}</b></h2></summary>`;
+    if (kinds[0] === "contract") return `<details class="ak-sys-sec"${open ? " open" : ""}>${head}${contractTable(xs)}</details>`;
+    if (cards) return `<details class="ak-sys-sec"${open ? " open" : ""}>${head}<div class="ak-deck ak-edeck">${xs.map((e, i) => (i < LIMIT ? elCard(e) : elCard(e).replace("<a ", "<a data-extra hidden "))).join("")}</div>${more(xs.length)}</details>`;
+    return `<details class="ak-sys-sec"${open ? " open" : ""}>${head}<div class="ak-elist">${xs.map((e, i) => (i < LIMIT ? elRow(e) : elRow(e).replace("<a ", "<a data-extra hidden "))).join("")}</div>${more(xs.length)}</details>`;
   }).join("");
   setTimeout(() => {
     const input = $("#sys-q");
@@ -553,19 +623,19 @@ export function systemPage(parts, q) {
     });
   });
   const used = [...new Set(els.flatMap((e) => e.tech ?? []))].sort((a, b) => String(techOf(a).category).localeCompare(String(techOf(b).category)) || a.localeCompare(b));
-  return `<div class="ak-page-head"><div><h1>System</h1><p>${els.length} elements · ${byKind("flow").length} flows · ${byKind("question").filter((x) => x.state !== "answered").length} open questions</p></div><input class="ak-input" id="sys-q" placeholder="Filter by name, tech, tag…" value="${esc(q.get("q") ?? "")}"></div>
+  return `<div class="ak-page-head"><div><h1>System</h1><p>${els.length} elements · ${byKind("flow").length} flows · ${byKind("question").filter((x) => x.state !== "answered").length} open questions</p></div><div class="ak-head-tools"><div class="ak-seg" role="group" aria-label="Layout"><a class="${cards ? "" : "on"}" href="${link({ view: "" })}">List</a><a class="${cards ? "on" : ""}" href="${link({ view: "cards" })}">Cards</a></div><input class="ak-input" id="sys-q" placeholder="Filter by name, tech, tag…" value="${esc(q.get("q") ?? "")}"></div></div>
 <div class="ak-filters"><span class="ak-label">Kind</span><div class="ak-chips">${chips}</div></div>
-${used.length ? `<div class="ak-filters"><span class="ak-label">Tech</span><div class="ak-chips">${used.map((x) => `<a href="${link({ q: x })}" class="ak-tech-link">${techChip(x)}</a>`).join("")}</div></div>` : ""}
+${used.length ? `<details class="ak-filters ak-techfilter"${filtered ? " open" : ""}><summary class="ak-label">Tech <b>${used.length}</b></summary><div class="ak-chips">${used.map((x) => `<a href="${link({ q: x })}" class="ak-tech-link">${techChip(x)}</a>`).join("")}</div></details>` : ""}
 ${sections || `<div class="ak-empty">Nothing matches.</div>`}`;
 }
 
 function contractTable(xs) {
-  const rows = xs.map((c) => {
+  const rows = xs.map((c, i) => {
     const { prod, cons } = contractSides(c.id);
     const mode = modeOfTransport(c.transport);
-    return `<tr><td>${transportChip(c.transport, mode)}</td><td><a class="mono" href="${href(c)}">${esc(c.name)}</a>${c.implied ? ` <span class="ak-origin ak-origin--implied">implied</span>` : ""}</td><td>${prod.map((x) => elChip(x)).join("") || `<span class="ak-miss">none</span>`}</td><td>${cons.map((x) => elChip(x)).join("") || `<span class="muted">—</span>`}</td><td>${flowsThrough(c.id).map((f) => elChip(f)).join("")}</td></tr>`;
+    return `<tr${i >= LIMIT ? " data-extra hidden" : ""}><td>${transportChip(c.transport, mode)}</td><td><a class="mono" href="${href(c)}">${esc(c.name)}</a>${c.implied ? ` <span class="ak-origin ak-origin--implied">implied</span>` : ""}</td><td>${prod.map((x) => elChip(x)).join("") || `<span class="ak-miss">none</span>`}</td><td>${cons.map((x) => elChip(x)).join("") || `<span class="muted">—</span>`}</td><td>${flowsThrough(c.id).map((f) => elChip(f)).join("")}</td></tr>`;
   }).join("");
-  return `<div class="am-md"><div class="am-table-wrap"><table class="ak-ctable"><thead><tr><th>Transport</th><th>Contract</th><th>Provided / published by</th><th>Used / consumed by</th><th>In flows</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  return `<div class="am-md"><div class="am-table-wrap"><table class="ak-ctable"><thead><tr><th>Transport</th><th>Contract</th><th>Provided / published by</th><th>Used / consumed by</th><th>In flows</th></tr></thead><tbody>${rows}</tbody></table></div></div>${more(xs.length)}`;
 }
 
 function emptySystem() {

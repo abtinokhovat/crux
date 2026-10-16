@@ -11,8 +11,15 @@ a contract, an entity, a business flow, an open question. They link into one gra
 shows it as an app (map, flows, element pages), and the CLI gives it to agents.
 
 **Format:** [reference.md](reference.md) is the full vocabulary — kinds, connection keys,
-contract refs, the `steps` flow syntax, entities, questions, sessions, conventions. Read it
-before writing any crux file.
+contract refs, code anchors, the `steps` flow syntax, entities, questions, sessions,
+conventions, and what crux finds in the code on its own. Read it before writing any crux file.
+[gaps.md](gaps.md) is the procedure for each kind of gap `crux gaps` reports.
+
+**crux is deterministic first.** On every `trace`, `gaps` and `lint --code`, crux reads the
+code and connects what the code or a manifest states exactly: wiring to stores and brokers,
+gRPC clients to servers, publish/consume calls, route handlers, tables to entities, flow steps
+to their handlers. You never hand-write those. You close the **gaps** — what crux saw but could
+not resolve — with a config hint (preferred) or a connection anchored to the code (`at:`).
 
 **Your role is personal.** You work for the user on their laptop. You never post to the share
 server, never message teammates, and **never run git commit, push or branch** — the user does all
@@ -28,13 +35,17 @@ Decisions and the documented system are binding context for every agent.
    - **elements** whose code covers them — what they expose, call, publish, consume and store, and the flows they are in,
    - **conventions** that apply to those paths,
    - **open questions** on those elements.
-2. To see how something works end to end: `crux trace <flow-or-element>` (steps, hops, contracts, decisions).
+2. To see how something works end to end: `crux trace <flow-or-element>`. It shows steps, hops,
+   contracts and decisions, each with `@ file:line` where the code does it. Open those lines
+   instead of grepping. Hops marked ✓code were found in the code; *(in code, not declared)*
+   means the model misses something.
 3. **Accepted** decisions: follow them. If the task conflicts, stop and say which ADR and why.
    If a change hits a **reopen when** trigger, say so and offer `crux q "…?"`.
 4. **Open questions** on what you touch: don't guess the answer. Ask the user, or record that
    you are blocked (see crux-build).
 5. If your change adds or removes a connection, an endpoint, a topic, a store, or a service,
-   update that element's crux file in the same change, then `crux lint`.
+   update that element's crux file in the same change, then `crux lint`. If you rename or move
+   anchored code, fix the anchors: `crux lint` reports broken ones (`anchor`).
 6. A hard-to-reverse choice no ADR covers: suggest `crux q "…?"` before making it.
 
 ## Describing the system
@@ -44,10 +55,41 @@ Decisions and the documented system are binding context for every agent.
   convention`). Then fill the frontmatter connections from the code — never invent them.
 - Prefer adding a connection on the side that owns it: the publisher lists `publishes`, the
   consumer lists `consumes`, the caller lists `calls … via contract`.
+- **Anchor what you write.** A connection gets `at: path#Symbol` and a flow step gets
+  ` @ path#Symbol`, for the code that does it. Skip only what crux anchors itself (`crux trace`
+  shows the anchor already) and planned elements (`status: planned`) that have no code yet.
+- Run `crux gaps` to see what is still unconnected, and work it with [gaps.md](gaps.md).
 - Anything you inferred and the user has not confirmed gets `origin: inferred`, a `confidence`,
   and `evidence:` (file:line). The user confirms by deleting `origin`.
 - After editing: `crux lint` (graph) and, when code exists, `crux lint --code` (imports, routes,
   topics, tech, undocumented services). Fix what you introduced; report the rest.
+
+## Every session closes into the graph
+
+The graph only stays true if each agent session leaves it better than it found it — not just
+sessions run under adopt/design/model/build. Before you finish **any** session that changed
+code, connections or settled a choice, do this (skip it only for pure Q&A that changed nothing):
+
+1. **Update what you touched.** `crux context <paths>` lists the elements and conventions that
+   cover your files. Fix their connections, `at:` anchors and summaries to match the code now.
+   `crux gaps --in <element>` and `crux lint --code` show what drifted.
+2. **Put the description next to the code.** A folder that already has a `README.md` gets a
+   `crux:` frontmatter block added to that README (the body stays the user's); a folder without
+   one gets `<dir>/crux.md`. Never create a second file where a README can carry the header.
+3. **Capture decisions.** A choice made in this session that is hard to reverse is an ADR:
+   `crux new "…"` with `status: Accepted` only if the user said so, `Proposed` if it is yours,
+   `Recovered` if you found it in code. Link it: `decided_by:` on the elements, `applies_to:`.
+   A choice still open is `crux q "…?"`, with `raised_from:` the element.
+4. **Honor the user's marks.** When the user points at a place ("this is where retries happen",
+   "mark this as the entry"), record exactly that: an element or an anchored connection with
+   `at: path#Symbol`, their words in `summary:`, no `origin: inferred`.
+5. **Leave one small visual, not a log.** Do not write a session file. Put a concise visual on
+   the element or flow the work changed, in its own file, so the user sees it in `crux serve`
+   and in the diff: a ```` ```steps ```` or ```` ```sequence ```` block of at most 8 lines
+   showing how it works *now*, and a one-or-two-line `## Why` under it when a choice shaped it.
+   Replace the previous visual; do not stack them. Nothing to draw (a rename, a fix) → nothing
+   to write. A session file only when the user asks for one.
+6. Run `crux lint`. Tell the user the files you changed — they commit.
 
 ## The decision flow
 

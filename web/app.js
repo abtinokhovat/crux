@@ -2,11 +2,14 @@
 import { $, $$, S, ancestors, esc, gist, href, index, label, nodeChip, optionStats, pill, refChip, statusLabel, statusOrder, tagChip, toast } from "./util.js";
 import { renderGraph } from "./graph.js";
 import { renderMap } from "./map.js";
+import { renderModel } from "./model.js";
+import { panZoom } from "./ide.js";
 import { openSearch, search } from "./search.js";
 import { archTree, areaBars, history, panel, register, sheet, statusCell, titleBlock } from "./blueprint.js";
 import { bindFlow, finalizeHtml, flowStrip, openNewQuestion, privacy, sharePanel, shareOf, teamHtml } from "./flow.js";
+import { hydrateTracks } from "./track.js";
 import { componentsCss, listComponents, loadProjectComponents, renderAdr, themeCss } from "./vendor/crux-render.js";
-import { completeness, elementPage, elementPopover, flowsPage, injectCatalogCss, playOnMap, questionsPage, sessionsPage, systemPage, systemSummary, techIcon } from "./system.js";
+import { completeness, elementPage, elementPopover, flowsPage, injectCatalogCss, playOnMap, trackResolver, questionsPage, sessionsPage, systemPage, systemSummary, techIcon } from "./system.js";
 
 // Theme tokens come from the renderer (answer-me-with-html themes), so the page and the
 // rendered ADRs always agree.
@@ -27,6 +30,7 @@ async function loadSite() {
   const sysCount = (site.elements ?? []).filter((e) => !["flow", "question", "session"].includes(e.kind) && !e.implied).length;
   $("#nav-sys").textContent = sysCount || "";
   $("#nav-flows").textContent = (site.elements ?? []).filter((e) => e.kind === "flow").length || "";
+  $("#nav-model").textContent = (site.elements ?? []).filter((e) => e.kind === "entity").length || "";
   const oq = (site.elements ?? []).filter((e) => e.kind === "question" && e.state !== "answered").length;
   $("#nav-q").textContent = oq || "";
   injectStatusCss(site.statuses);
@@ -83,6 +87,7 @@ const ROUTES = {
   doc: (p, q) => docPage(p.slice(1).join("/"), q),
   graph: (p, q) => mountCanvas("graph", q),
   map: (p, q) => mountCanvas("map", q, p[1]),
+  model: (p, q) => mountCanvas("model", q),
   tags,
   tag: (p) => tagPage(p[1]),
   components,
@@ -104,14 +109,16 @@ async function route({ keepScroll = false } = {}) {
   const name = parts[0] ?? "";
   const fn = ROUTES[name] ?? notFound;
   const elKind = name === "el" ? S.byId.get(parts.slice(1).join("/"))?.kind : null;
-  const navFor = { flow: "flows", question: "questions", session: "sessions" };
+  const navFor = { flow: "flows", question: "questions", session: "sessions", entity: "model" };
   for (const a of $$("#nav a")) a.toggleAttribute("aria-current", a.dataset.route === (name || "home") || (name === "adr" && a.dataset.route === "list") || (name === "tag" && a.dataset.route === "tags") || (name === "el" && a.dataset.route === (navFor[elKind] ?? "system")));
   for (const a of $$("#nav a[aria-current]")) a.setAttribute("aria-current", "page");
   cleanup?.();
   cleanup = null;
+  view.classList.toggle("ak-main--full", name === "map" || name === "model"); // the map fills the screen under the header
   const y = scrollY;
   const out = await fn(parts, q);
   if (typeof out === "string") view.innerHTML = out;
+  hydrateTracks(view, trackResolver());
   if (keepScroll) scrollTo(0, y);
   else if (!location.hash.includes("#panel-")) scrollTo(0, 0);
 }
@@ -331,9 +338,9 @@ function egoGraph(a) {
   });
   const edges = pos.map((p) => `<line x1="${cx}" y1="${cy}" x2="${p.x}" y2="${p.y}" class="g-edge t-${p.type}"/>`).join("");
   const nodes = pos
-    .map((p) => `<a href="${href(p.a)}" data-ref="${esc(p.a.id)}"><g class="ak-st-${esc(p.a.statusKey)}"><circle cx="${p.x}" cy="${p.y}" r="9" style="fill:var(--st)" stroke="var(--paper)" stroke-width="2"/><text x="${p.x}" y="${p.y + (p.y > cy ? 22 : -14)}" text-anchor="middle">${esc(p.a.kind === "adr" ? p.a.id : "doc")}</text></g></a>`)
+    .map((p) => `<a href="${href(p.a)}" data-ref="${esc(p.a.id)}"><g class="ak-st-${esc(p.a.statusKey)}"><rect x="${p.x - 9}" y="${p.y - 9}" width="18" height="18" style="fill:var(--st)" stroke="var(--paper)" stroke-width="2"/><text x="${p.x}" y="${p.y + (p.y > cy ? 22 : -14)}" text-anchor="middle">${esc(p.a.kind === "adr" ? p.a.id : "doc")}</text></g></a>`)
     .join("");
-  return `<svg class="ak-ego" viewBox="0 0 ${W} ${H}" role="img" aria-label="Connections">${edges}${nodes}<g class="ak-st-${esc(a.statusKey)}"><circle cx="${cx}" cy="${cy}" r="15" style="fill:var(--st)" stroke="var(--ink)" stroke-width="2"/><text x="${cx}" y="${cy + 4}" text-anchor="middle" style="fill:var(--paper);stroke:none">${esc(a.kind === "adr" ? a.id : "•")}</text></g></svg>`;
+  return `<svg class="ak-ego" viewBox="0 0 ${W} ${H}" role="img" aria-label="Connections">${edges}${nodes}<g class="ak-st-${esc(a.statusKey)}"><rect x="${cx - 15}" y="${cy - 15}" width="30" height="30" style="fill:var(--st)" stroke="var(--ink)" stroke-width="2"/><text x="${cx}" y="${cy + 4}" text-anchor="middle" style="fill:var(--paper);stroke:none">${esc(a.kind === "adr" ? a.id : "•")}</text></g></svg>`;
 }
 
 function glance(a) {
@@ -508,8 +515,30 @@ function searchPage(text) {
 // ── canvases ─────────────────────────────────────────────
 function mountCanvas(kind, q, nodeId) {
   view.innerHTML = "";
-  cleanup = kind === "graph" ? renderGraph(view, q) : renderMap(view, nodeId ?? "", q);
+  cleanup = kind === "graph" ? renderGraph(view, q) : kind === "model" ? renderModel(view, q) : renderMap(view, nodeId ?? "", q);
   return null;
+}
+
+// Long sequence diagrams sit in a framed viewer: fitted to the width, scrolled by wheel or drag,
+// zoomed with ctrl/⌘ + wheel or the buttons — never a page of their own.
+function setupSeqViewer() {
+  const enhance = (fig) => {
+    const svg = fig.querySelector(":scope > svg");
+    if (!svg || fig.dataset.pz) return;
+    const w = Number(svg.getAttribute("width")), h = Number(svg.getAttribute("height"));
+    if (!w || !h) return;
+    fig.dataset.pz = "1";
+    const host = document.createElement("div");
+    host.className = "ak-pz";
+    svg.replaceWith(host);
+    host.append(svg);
+    const k = Math.min(0.9, Math.max(0.3, ((host.clientWidth || 900) - 48) / w));
+    host.style.setProperty("--pz-h", `${Math.round(Math.max(280, Math.min(h * k + 56, innerHeight * 0.78)))}px`);
+    panZoom(host, svg, { w, h, fit: "width", fitMax: 0.9, min: 0.25, max: 2.5 });
+  };
+  const scan = (root) => root.querySelectorAll?.(".ak-seq:not([data-pz])").forEach(enhance);
+  new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => n.nodeType === 1 && (n.matches?.(".ak-seq") ? enhance(n) : scan(n))))).observe(document.body, { childList: true, subtree: true });
+  scan(document);
 }
 
 // ── global behavior ──────────────────────────────────────
@@ -675,7 +704,7 @@ function setupSequencePlayers() {
     s.fig.querySelectorAll(".ak-sq-dot, .ak-sq-flow").forEach((el) => el.remove());
     const path = g?.querySelector("path.am-edge");
     if (!path) return;
-    const svg = s.fig.querySelector(":scope > svg");
+    const svg = s.fig.querySelector(":scope > svg, :scope > .ak-pz > svg");
     const color = partColor(s, g.dataset.from);
     const id = (s.gid ??= `sqg${Math.random().toString(36).slice(2, 8)}`);
     if (!svg.querySelector(`#${id}-head`)) svg.querySelector("defs").insertAdjacentHTML("beforeend", `<marker id="${id}-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>`);
@@ -911,7 +940,11 @@ addEventListener("hashchange", () => {
 
 const site = await loadSite();
 setupPopovers();
+setupSeqViewer();
 setupCopy();
 setupSequencePlayers();
 setupLive(site);
 route();
+
+// ```track scenes mount whenever they land in the view (routes, live reload, popovers)
+new MutationObserver(() => hydrateTracks(view, trackResolver())).observe(view, { childList: true, subtree: true });

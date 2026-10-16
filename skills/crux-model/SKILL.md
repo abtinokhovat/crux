@@ -41,5 +41,5 @@ Read `../crux/reference.md` first.
    write or update a `convention` file with `applies_to:` and a short example.
 7. **Questions.** Anything the user deferred → `crux new question` with `phase: model` and
    `blocks:` the module or entity.
-8. **Close.** `crux new session "Model — <service>"` (`phase: model`, `produced:` all files,
-   short story). `crux lint`. Tell the user the files and that crux-build can implement them.
+8. **Close.** Keep one short visual per module or entity you shaped. No session file unless the
+   user asks. `crux lint`. Tell the user the files and that crux-build can implement them.

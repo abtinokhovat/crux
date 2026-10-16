@@ -14,8 +14,18 @@ var langLike = map[string]bool{"language": true, "runtime": true, "framework": t
 func mergeElements(a *Architecture, s *Store, cfg *config.Config) *Architecture {
 	var boxes []*Doc
 	isBox := map[string]bool{}
+	// data lives in infrastructure: topics and queues sit in their broker, entities in their store
+	home := func(e *Doc) string {
+		switch {
+		case e.Kind == "contract" && (e.Transport == "topic" || e.Transport == "queue"):
+			return e.Parent
+		case e.Kind == "entity":
+			return e.Store
+		}
+		return ""
+	}
 	for _, e := range s.Elements {
-		if IsStructural(e.Kind) || (e.Kind == "contract" && (e.Transport == "topic" || e.Transport == "queue") && e.Parent != "" && s.ByID[e.Parent] != nil && IsStructural(s.ByID[e.Parent].Kind)) {
+		if IsStructural(e.Kind) || home(e) != "" && s.ByID[home(e)] != nil && IsStructural(s.ByID[home(e)].Kind) {
 			boxes = append(boxes, e)
 			isBox[e.ID] = true
 		}
@@ -88,7 +98,11 @@ func mergeElements(a *Architecture, s *Store, cfg *config.Config) *Architecture 
 		if n.Doc != e.ID || n.Parent != nil {
 			continue // a yaml node keeps its yaml place
 		}
-		if p := boxParent(e.ID); p != "" {
+		p := boxParent(e.ID)
+		if h := home(e); h != "" && a.Nodes[h] != nil {
+			p = h
+		}
+		if p != "" {
 			pid := p
 			n.Parent = &pid
 			if !contains(a.Nodes[p].Children, e.ID) {
@@ -183,6 +197,9 @@ func mergeElements(a *Architecture, s *Store, cfg *config.Config) *Architecture 
 		if l.Type == "uses" && toDoc != nil && toDoc.Kind == "contract" && !isBox[to] {
 			continue // the implied client → provider line carries it
 		}
+		if l.Source == "scan" && l.Via == "" {
+			label = "" // found in code: the evidence (an env var, a host) is no name for the line
+		}
 		if label == "" && (l.Type == "reads" || l.Type == "writes") {
 			label = l.Type
 		}
@@ -193,6 +210,20 @@ func mergeElements(a *Architecture, s *Store, cfg *config.Config) *Architecture 
 			label = "" // the topic box itself names it
 		}
 		add(boxOf(from), boxOf(to), l, label)
+	}
+	// entities in their store: the owner writes them; relations between them run inside the store
+	for _, e := range boxes {
+		if e.Kind != "entity" {
+			continue
+		}
+		if owner := boxOf(e.Parent); owner != "" {
+			add(owner, e.ID, Link{Type: "writes", Mode: "data"}, "owns")
+		}
+	}
+	for _, l := range s.Links {
+		if (l.Type == "references" || l.Type == "has") && isBox[l.From] && isBox[l.To] && s.ByID[l.From].Store == s.ByID[l.To].Store {
+			add(l.From, l.To, Link{Type: l.Type, Mode: "data"}, l.Label)
+		}
 	}
 	// decisions on the boxes they are about (elements that are not boxes pass to their box)
 	for _, l := range s.Links {

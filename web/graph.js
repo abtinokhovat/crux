@@ -18,7 +18,7 @@ export function renderGraph(root, q) {
 <div class="ak-map-layout">
   <section class="ak-box ak-canvas-wrap"><div class="g-hist" id="g-hist"></div><svg class="ak-canvas ak-canvas-tall" id="g-svg" role="img" aria-label="Decision graph"></svg>
     <div class="ak-gtools"><button class="ak-btn" id="g-fit" type="button">Fit</button><button class="ak-btn" id="g-shake" type="button">Re-layout</button></div>
-    <div class="ak-glegend">${EDGE_TYPES.map((t) => `<span><svg viewBox="0 0 26 8"><line x1="0" y1="4" x2="26" y2="4" class="g-edge t-${t}" style="opacity:1"/></svg>${esc(S.site.relations[t]?.label ?? t)}</span>`).join("")}<span><svg viewBox="0 0 26 8"><circle cx="13" cy="4" r="3.5" class="ak-st-doc" style="fill:var(--paper);stroke:var(--ak-purple);stroke-width:1.5"/></svg>doc</span></div>
+    <div class="ak-glegend">${EDGE_TYPES.map((t) => `<span><svg viewBox="0 0 26 8"><line x1="0" y1="4" x2="26" y2="4" class="g-edge t-${t}" style="opacity:1"/></svg>${esc(S.site.relations[t]?.label ?? t)}</span>`).join("")}<span><svg viewBox="0 0 26 8"><rect x="9.5" y="0.5" width="7" height="7" class="ak-st-doc" style="fill:var(--paper);stroke:var(--ak-purple);stroke-width:1.5"/></svg>doc</span></div>
   </section>
   <aside class="ak-box m-detail" id="g-detail"><header class="am-panel-head"><span class="am-panel-id">i</span><h2>Details</h2></header><div class="ak-box-body" id="g-detail-body"></div></aside>
 </div>`;
@@ -110,7 +110,7 @@ ${tags.length ? `<span class="ak-label">Tag</span><div class="ak-chips">${(state
     }
     for (const n of nodes) {
       const g = svgEl("g", { class: `g-node ak-st-${n.a.statusKey}${n.a.kind === "doc" ? " doc" : ""}`, tabindex: 0, "data-id": n.id }, gNodes);
-      svgEl("circle", { r: n.r }, g);
+      svgEl("rect", { x: -n.r, y: -n.r, width: n.r * 2, height: n.r * 2 }, g);
       const t1 = svgEl("text", { y: n.r + 13, "text-anchor": "middle" }, g);
       t1.textContent = n.a.kind === "adr" ? n.a.id : "doc";
       const t2 = svgEl("text", { y: n.r + 26, "text-anchor": "middle", class: "t" }, g);

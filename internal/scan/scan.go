@@ -18,6 +18,7 @@ import (
 	"github.com/abtinokhovat/crux/internal/adr"
 	"github.com/abtinokhovat/crux/internal/catalog"
 	"github.com/abtinokhovat/crux/internal/config"
+	"github.com/abtinokhovat/crux/internal/index"
 )
 
 type Facts struct {
@@ -32,6 +33,29 @@ type Facts struct {
 	Schemas    []string    `json:"schemas"`
 	Migrations []string    `json:"migrations"`
 	Problems   []string    `json:"problems,omitempty"`
+	// Extractors: which crux-home extractors (id@hash) contributed, so a result can be reproduced.
+	Extractors []string `json:"extractors,omitempty"`
+
+	// wiring (wire.go)
+	Env         []EnvUse       `json:"env"`
+	Hosts       []HostUse      `json:"hosts"`
+	Clients     []Client       `json:"clients"`
+	Wires       []Wire         `json:"wires"`
+	EnvSet      []EnvSet       `json:"envSet"`
+	Unwired     []Unwired      `json:"unwired"`
+	Aliases     [][2]string    `json:"aliases"` // another name for a host → the host
+	K8sServices []K8sService   `json:"k8sServices"`
+	Ingress     []IngressRule  `json:"ingress"`
+	Tables      []Table        `json:"tables"`
+	Protos      []ProtoService `json:"protos"`
+	Messages    []ProtoMessage `json:"messages"`
+	Owners      []OwnerRule    `json:"owners"`
+	GRPCImpls   []GRPCImpl     `json:"grpcImpls"`
+
+	// deep: what the type-aware analyzers saw, one entry per recognized call (see internal/index)
+	Obs []index.Obs `json:"obs,omitempty"`
+	// Entities: record types that look like domain entities (stored, or in a model folder), best first.
+	Entities []index.Candidate `json:"entities,omitempty"`
 }
 
 // Module is a unit of code: a Go package or a JS/TS package (package.json folder).
@@ -52,15 +76,22 @@ type Route struct {
 	Dir    string `json:"dir"`
 	File   string `json:"file"`
 	Line   int    `json:"line"`
+	// Handler: the function registered for the route, as written; At: its anchor (path#Symbol)
+	// when crux found its declaration.
+	Handler string `json:"handler,omitempty"`
+	At      string `json:"at,omitempty"`
 }
 
 type Topic struct {
 	Name string `json:"name"`
 	Kind string `json:"kind"` // topic | queue
 	Dir  string `json:"dir"`  // pub | sub | "" (unknown)
-	Mod  string `json:"module"`
-	File string `json:"file"`
-	Line int    `json:"line"`
+	// Guess: the direction comes from words on the line (writer, consumer…), not from the API
+	// called. Guessed directions are never turned into connections.
+	Guess bool   `json:"guess,omitempty"`
+	Mod   string `json:"module"`
+	File  string `json:"file"`
+	Line  int    `json:"line"`
 }
 
 type TechHit struct {
@@ -73,29 +104,32 @@ type TechHit struct {
 // Candidate is something that looks deployable: a Go main package, a server package.json, a
 // compose service with a build context, a Dockerfile folder, a Kubernetes workload.
 type Candidate struct {
-	Name     string   `json:"name"`
-	Dir      string   `json:"dir"`
-	Kind     string   `json:"kind"` // service | job | app
-	Lang     string   `json:"lang,omitempty"`
-	Evidence []string `json:"evidence"`
+	Name     string            `json:"name"`
+	Dir      string            `json:"dir"`
+	Kind     string            `json:"kind"` // service | job | app
+	Lang     string            `json:"lang,omitempty"`
+	Evidence []string          `json:"evidence"`
+	Labels   map[string]string `json:"labels,omitempty"` // Kubernetes pod labels
 }
 
 type Infra struct {
-	Name  string `json:"name"`
-	Image string `json:"image,omitempty"`
-	Tech  string `json:"tech,omitempty"`
-	Kind  string `json:"kind"` // store | cache | broker | gateway | infra
-	File  string `json:"file"`
+	Name   string            `json:"name"`
+	Image  string            `json:"image,omitempty"`
+	Tech   string            `json:"tech,omitempty"`
+	Kind   string            `json:"kind"` // store | cache | broker | gateway | infra
+	File   string            `json:"file"`
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // Run walks the project once and lets every adapter look at the files it understands.
 func Run(cfg *config.Config, cat *catalog.Catalog, adapters []string) *Facts {
-	f := &Facts{Root: cfg.Root, Modules: []*Module{}, Routes: []Route{}, Topics: []Topic{}, Tech: []TechHit{}, Services: []Candidate{}, Infra: []Infra{}, Schemas: []string{}, Migrations: []string{}}
+	f := &Facts{Root: cfg.Root, Modules: []*Module{}, Routes: []Route{}, Topics: []Topic{}, Tech: []TechHit{}, Services: []Candidate{}, Infra: []Infra{}, Schemas: []string{}, Migrations: []string{},
+		Env: []EnvUse{}, Hosts: []HostUse{}, Clients: []Client{}, Wires: []Wire{}, EnvSet: []EnvSet{}, Unwired: []Unwired{}, Aliases: [][2]string{}, K8sServices: []K8sService{}, Ingress: []IngressRule{}, Tables: []Table{}, Protos: []ProtoService{}, Messages: []ProtoMessage{}, Owners: []OwnerRule{}, GRPCImpls: []GRPCImpl{}}
 	if len(adapters) == 0 {
 		adapters = cfg.Lint.Adapters
 	}
 	if len(adapters) == 0 {
-		adapters = []string{"go", "ts", "infra"}
+		adapters = []string{"go", "ts", "infra", "extractors", "deep-auto"}
 	}
 	var files []string
 	adr.WalkProject(cfg, adr.LoadIgnore(cfg), func(abs, rel string, e os.DirEntry) {
@@ -111,6 +145,12 @@ func Run(cfg *config.Config, cat *catalog.Catalog, adapters []string) *Facts {
 		case "ts", "js", "node":
 			tsAdapter(cfg, cat, files, f, extra)
 			f.Adapters = append(f.Adapters, "ts")
+		case "deep":
+			deepAdapter(cfg, files, f, true)
+		case "deep-auto":
+			deepAdapter(cfg, files, f, false)
+		case "extractors":
+			extractorsAdapter(cfg, files, f)
 		case "infra":
 			infraAdapter(cfg, cat, files, f)
 			f.Adapters = append(f.Adapters, "infra")
@@ -131,10 +171,18 @@ func Run(cfg *config.Config, cat *catalog.Catalog, adapters []string) *Facts {
 			strings.Contains(path.Base(low), "swagger") && (strings.HasSuffix(low, ".yaml") || strings.HasSuffix(low, ".yml") || strings.HasSuffix(low, ".json")),
 			strings.Contains(path.Base(low), "asyncapi"):
 			f.Schemas = append(f.Schemas, p)
-		case strings.Contains(low, "migration") && (strings.HasSuffix(low, ".sql") || strings.HasSuffix(low, ".go") || strings.HasSuffix(low, ".ts")):
+		case strings.Contains(low, "migration") && (strings.HasSuffix(low, ".sql") || strings.HasSuffix(low, ".go") || strings.HasSuffix(low, ".ts")),
+			strings.HasSuffix(low, ".sql") && (strings.Contains(low, "migrat") || path.Base(low) == "schema.sql" || strings.Contains(low, "/schema/")):
 			f.Migrations = append(f.Migrations, p)
 		}
+		if strings.HasSuffix(low, ".proto") {
+			protoFile(cfg.Abs(p), p, f)
+		}
+		if p == "CODEOWNERS" || p == ".github/CODEOWNERS" || p == "docs/CODEOWNERS" || p == ".gitlab/CODEOWNERS" {
+			codeowners(cfg.Abs(p), p, f)
+		}
 	}
+	migrationTables(cfg, f.Migrations, f)
 	dedupe(f)
 	return f
 }
@@ -181,6 +229,9 @@ func dedupe(f *Facts) {
 		if i, ok := byName[k]; ok {
 			if svcs[i].Lang == "" && c.Lang != "" {
 				c.Evidence = uniq(append(c.Evidence, svcs[i].Evidence...))
+				if c.Labels == nil {
+					c.Labels = svcs[i].Labels
+				}
 				svcs[i] = c
 			} else {
 				svcs[i].Evidence = uniq(append(svcs[i].Evidence, c.Evidence...))
@@ -203,10 +254,21 @@ func dedupe(f *Facts) {
 		}
 	}
 	f.Routes = orEmpty(routes)
+	// a line matched by an API pattern (sure direction) and by a generic one (guessed): keep
+	// the sure one
+	sure := map[string]bool{}
+	for _, t := range f.Topics {
+		if !t.Guess && t.Dir != "" {
+			sure[fmt.Sprintf("%s|%s:%d", t.Name, t.File, t.Line)] = true
+		}
+	}
 	seenTp := map[string]bool{}
 	var topics []Topic
 	for _, t := range f.Topics {
-		k := t.Name + t.Dir + t.Mod
+		if (t.Guess || t.Dir == "") && sure[fmt.Sprintf("%s|%s:%d", t.Name, t.File, t.Line)] {
+			continue
+		}
+		k := fmt.Sprintf("%s|%s|%s|%v", t.Name, t.Dir, t.Mod, t.Guess)
 		if !seenTp[k] {
 			seenTp[k] = true
 			topics = append(topics, t)

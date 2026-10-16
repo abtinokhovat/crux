@@ -315,6 +315,15 @@ function wikiLinks(text) {
   });
 }
 
+// crux draws no curves. The diagram renderers from answer-me-with-html (generated, not edited
+// here) round flowchart edges with Q segments and draw stores as arcs; turn both into straight
+// segments through the same points. Only path data is touched.
+function squareCurves(html) {
+  const pt = String.raw`(-?[\d.]+),(-?[\d.]+)`;
+  return html.replace(/(\sd=")([^"]*[QA][^"]*)(")/g, (m, a, d, z) =>
+    a + d.replace(new RegExp(String.raw`Q${pt}\s+${pt}`, "g"), "L$1,$2 L$3,$4").replace(new RegExp(String.raw`A[\d.]+,[\d.]+\s+\S+\s+\S+\s+\S+\s+${pt}`, "g"), "L$1,$2") + z);
+}
+
 // ── public ───────────────────────────────────────────────────────────
 // forShare: the snapshot reviewers see — no local-only controls, no "from Claude" marks.
 export function renderAdr(adr, store, cfg, { forShare = false } = {}) {
@@ -366,7 +375,7 @@ export function renderAdr(adr, store, cfg, { forShare = false } = {}) {
 </section>`);
   }
   seenTerms = new Set();
-  const html = linkRefs(sourceBadges(intro + panels.join("\n")), store, cfg);
+  const html = squareCurves(linkRefs(sourceBadges(intro + panels.join("\n")), store, cfg));
   ctx.adr = null;
   return { html, errors };
 }

@@ -59,27 +59,33 @@ type Doc struct {
 	Source     string              `json:"-"`
 
 	// elements (crux: <kind> files)
-	Parent      string   `json:"parent,omitempty"`
-	Tech        []string `json:"tech,omitempty"`
-	Code        []string `json:"code,omitempty"`
-	CodeImplied bool     `json:"codeImplied,omitempty"`
-	Origin      string   `json:"origin,omitempty"`
-	Confidence  string   `json:"confidence,omitempty"`
-	Evidence    []string `json:"evidence,omitempty"`
-	Transport   string   `json:"transport,omitempty"` // contract
-	Name        string   `json:"name,omitempty"`      // contract: "POST /orders", "order.created"
-	On          string   `json:"on,omitempty"`
-	Schema      string   `json:"schema,omitempty"`
-	Trigger     string   `json:"trigger,omitempty"` // flow
-	Outcome     string   `json:"outcome,omitempty"`
-	Steps       []Step   `json:"steps,omitempty"`
-	Phase       string   `json:"phase,omitempty"` // session
-	State       string   `json:"state,omitempty"` // question: open | answered
-	RaisedFrom  string   `json:"raisedFrom,omitempty"`
-	Answer      string   `json:"answer,omitempty"`
-	Implied     bool     `json:"implied,omitempty"` // made from a reference; no file
-	Unknown     bool     `json:"unknown,omitempty"` // crux: value is not a known kind
-	Wiki        []string `json:"-"`
+	Parent        string        `json:"parent,omitempty"`
+	Tech          []string      `json:"tech,omitempty"`
+	Code          []string      `json:"code,omitempty"`
+	CodeImplied   bool          `json:"codeImplied,omitempty"`
+	Origin        string        `json:"origin,omitempty"`
+	Confidence    string        `json:"confidence,omitempty"`
+	Evidence      []string      `json:"evidence,omitempty"`
+	At            []string      `json:"at,omitempty"`        // code anchors: path#Symbol, path:line
+	Hosts         []string      `json:"hosts,omitempty"`     // host names this element answers on (external APIs)
+	Transport     string        `json:"transport,omitempty"` // contract
+	Name          string        `json:"name,omitempty"`      // contract: "POST /orders", "order.created"
+	On            string        `json:"on,omitempty"`
+	Schema        string        `json:"schema,omitempty"`
+	Trigger       string        `json:"trigger,omitempty"` // flow
+	Outcome       string        `json:"outcome,omitempty"`
+	Steps         []Step        `json:"steps,omitempty"`
+	Phase         string        `json:"phase,omitempty"` // session
+	State         string        `json:"state,omitempty"` // question: open | answered
+	RaisedFrom    string        `json:"raisedFrom,omitempty"`
+	Answer        string        `json:"answer,omitempty"`
+	Fields        []EntityField `json:"fields,omitempty"` // entity: the ```entity block
+	Store         string        `json:"store,omitempty"`  // entity: the store it is kept in
+	StoreInferred bool          `json:"storeInferred,omitempty"`
+	Table         string        `json:"table,omitempty"`
+	Implied       bool          `json:"implied,omitempty"` // made from a reference; no file
+	Unknown       bool          `json:"unknown,omitempty"` // crux: value is not a known kind
+	Wiki          []string      `json:"-"`
 }
 
 type Edge struct {
@@ -99,11 +105,11 @@ type Node struct {
 	ID       string   `json:"id"`
 	Label    string   `json:"label"`
 	Kind     string   `json:"kind"`
-	Tech     string   `json:"tech"`  // infra technology (redis, kafka, postgres…): colors the box
+	Tech     string   `json:"tech"` // infra technology (redis, kafka, postgres…): colors the box
 	Techs    []string `json:"techs,omitempty"`
 	Doc      string   `json:"doc,omitempty"`    // element id when the box comes from a crux file
 	Origin   string   `json:"origin,omitempty"` // inferred boxes draw dotted
-	Lines    string   `json:"lines"` // "straight" draws this level with straight lines instead of elbows
+	Lines    string   `json:"lines"`            // "straight" draws this level with straight lines instead of elbows
 	Sub      string   `json:"sub"`
 	Desc     string   `json:"desc"`
 	Tags     []string `json:"tags"`
@@ -164,6 +170,7 @@ type Store struct {
 	Tags         map[string][]string `json:"tags"`
 	Architecture *Architecture       `json:"architecture"`
 	Problems     []Problem           `json:"problems"`
+	Anchors      []AnchorUse         `json:"anchors"`
 	ByID         map[string]*Doc     `json:"-"`
 }
 
@@ -451,6 +458,7 @@ func Load(cfg *config.Config) *Store {
 		}
 	}
 	linkElements(s, cfg, cat)
+	resolveAnchors(s, cfg)
 	all = append(append(append([]*Doc{}, s.Adrs...), s.Docs...), s.Elements...)
 	s.buildEdges(all)
 	s.Architecture = loadArchitecture(cfg, s)

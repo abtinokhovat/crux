@@ -7,7 +7,7 @@ summary: a customer's purchase and its state
 
 ```entity
 id          uuid      pk
-customer_id uuid      fk customer
+customer_id uuid      required  the customer who placed it
 status      enum      pending | paid | failed | cancelled
 total       money     sum of lines, frozen at create
 created_at  timestamp
